@@ -163,11 +163,11 @@ def list_branches(
     return make_tangled_request("sh.tangled.repo.branches", params, knot=knot)
 
 
-def create_issue(repo: str, title: str, body: str | None = None) -> dict[str, Any]:
+def create_issue(repo_id: str, title: str, body: str | None = None) -> dict[str, Any]:
     """create an issue on a repository
 
     Args:
-        repo: repository AT-URI (e.g., 'at://did:plc:.../sh.tangled.repo.repo/...')
+        repo_id: repository identifier in "did/repo" format (e.g., 'did:plc:.../tangled-mcp')
         title: issue title
         body: optional issue body/description
 
@@ -179,14 +179,59 @@ def create_issue(repo: str, title: str, body: str | None = None) -> dict[str, An
     if not client.me:
         raise RuntimeError("client not authenticated")
 
+    # parse repo_id to get owner_did and repo_name
+    if "/" not in repo_id:
+        raise ValueError(f"invalid repo_id format: {repo_id}")
+
+    owner_did, repo_name = repo_id.split("/", 1)
+
+    # get the repo AT-URI by querying the repo collection
+    records = client.com.atproto.repo.list_records(
+        models.ComAtprotoRepoListRecords.Params(
+            repo=owner_did,
+            collection="sh.tangled.repo",
+            limit=100,
+        )
+    )
+
+    repo_at_uri = None
+    for record in records.records:
+        if hasattr(record.value, "name") and record.value.name == repo_name:
+            repo_at_uri = record.uri
+            break
+
+    if not repo_at_uri:
+        raise ValueError(f"repo not found: {repo_id}")
+
+    # query existing issues to determine next issueId
+    existing_issues = client.com.atproto.repo.list_records(
+        models.ComAtprotoRepoListRecords.Params(
+            repo=client.me.did,
+            collection="sh.tangled.repo.issue",
+            limit=100,
+        )
+    )
+
+    # find max issueId for this repo
+    max_issue_id = 0
+    for issue_record in existing_issues.records:
+        if hasattr(issue_record.value, "repo") and issue_record.value.repo == repo_at_uri:
+            issue_id = getattr(issue_record.value, "issueId", None)
+            if issue_id is not None:
+                max_issue_id = max(max_issue_id, issue_id)
+
+    next_issue_id = max_issue_id + 1
+
     # generate timestamp ID for rkey
     tid = int(datetime.now(timezone.utc).timestamp() * 1000000)
     rkey = str(tid)
 
-    # create issue record
+    # create issue record with proper schema
     record = {
         "$type": "sh.tangled.repo.issue",
-        "repo": repo,
+        "repo": repo_at_uri,  # full AT-URI of repo record
+        "issueId": next_issue_id,  # sequential issue ID
+        "owner": client.me.did,  # issue creator's DID
         "title": title,
         "body": body,
         "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -202,16 +247,16 @@ def create_issue(repo: str, title: str, body: str | None = None) -> dict[str, An
         )
     )
 
-    return {"uri": response.uri, "cid": response.cid}
+    return {"uri": response.uri, "cid": response.cid, "issueId": next_issue_id}
 
 
 def list_repo_issues(
-    repo: str, limit: int = 50, cursor: str | None = None
+    repo_id: str, limit: int = 50, cursor: str | None = None
 ) -> dict[str, Any]:
     """list issues for a repository
 
     Args:
-        repo: repository AT-URI
+        repo_id: repository identifier in "did/repo" format
         limit: maximum number of issues to return
         cursor: pagination cursor
 
@@ -222,6 +267,30 @@ def list_repo_issues(
 
     if not client.me:
         raise RuntimeError("client not authenticated")
+
+    # parse repo_id to get owner_did and repo_name
+    if "/" not in repo_id:
+        raise ValueError(f"invalid repo_id format: {repo_id}")
+
+    owner_did, repo_name = repo_id.split("/", 1)
+
+    # get the repo AT-URI by querying the repo collection
+    records = client.com.atproto.repo.list_records(
+        models.ComAtprotoRepoListRecords.Params(
+            repo=owner_did,
+            collection="sh.tangled.repo",
+            limit=100,
+        )
+    )
+
+    repo_at_uri = None
+    for record in records.records:
+        if hasattr(record.value, "name") and record.value.name == repo_name:
+            repo_at_uri = record.uri
+            break
+
+    if not repo_at_uri:
+        raise ValueError(f"repo not found: {repo_id}")
 
     # list records from the issue collection
     response = client.com.atproto.repo.list_records(
@@ -236,14 +305,15 @@ def list_repo_issues(
     # filter issues by repo
     issues = []
     for record in response.records:
-        if hasattr(record.value, "repo") and record.value.repo == repo:
+        if hasattr(record.value, "repo") and record.value.repo == repo_at_uri:
             issues.append(
                 {
                     "uri": record.uri,
                     "cid": record.cid,
+                    "issueId": getattr(record.value, "issueId", 0),
                     "title": getattr(record.value, "title", ""),
                     "body": getattr(record.value, "body", None),
-                    "createdAt": getattr(record.value, "created_at", ""),
+                    "createdAt": getattr(record.value, "createdAt", ""),
                 }
             )
 
