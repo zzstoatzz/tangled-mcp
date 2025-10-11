@@ -22,6 +22,7 @@ class IssueInfo(BaseModel):
     title: str
     body: str | None = None
     created_at: str = Field(alias="createdAt")
+    labels: list[str] = []
 
 
 class CreateIssueResult(BaseModel):

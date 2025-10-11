@@ -10,6 +10,7 @@ from tangled_mcp._tangled._issues import (
     create_issue,
     delete_issue,
     list_repo_issues,
+    list_repo_labels,
     update_issue,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "update_issue",
     "delete_issue",
     "list_repo_issues",
+    "list_repo_labels",
     "resolve_repo_identifier",
 ]

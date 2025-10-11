@@ -103,6 +103,7 @@ all tools accept repositories in `owner/repo` format (e.g., `zzstoatzz/tangled-m
 - `update_repo_issue(repo, issue_id, title, body, labels)` - update an issue's title, body, and/or labels
 - `delete_repo_issue(repo, issue_id)` - delete an issue
 - `list_repo_issues(repo, limit, cursor)` - list issues for a repository
+- `list_repo_labels(repo)` - list available labels for a repository
 
 ## development
 
