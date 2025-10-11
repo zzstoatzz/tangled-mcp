@@ -408,7 +408,10 @@ def list_repo_issues(
         # build map of issue_uri -> current label URIs
         issue_labels_map: dict[str, set[str]] = {uri: set() for uri in issue_uris}
         for op_record in label_ops.records:
-            if hasattr(op_record.value, "subject") and op_record.value.subject in issue_labels_map:
+            if (
+                hasattr(op_record.value, "subject")
+                and op_record.value.subject in issue_labels_map
+            ):
                 subject_uri = op_record.value.subject
                 if hasattr(op_record.value, "add"):
                     for operand in op_record.value.add:
