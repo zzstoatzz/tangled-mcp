@@ -1,5 +1,64 @@
 # pull requests: design exploration
 
+**⚠️ CRITICAL: THIS DESIGN CANNOT BE IMPLEMENTED ⚠️**
+
+**Date discovered**: 2025-10-11
+**Reason**: Pull requests in tangled use a fundamentally different architecture than issues.
+
+## Why PR support via atproto records doesn't work
+
+After implementing this design and testing, we discovered that **tangled's appview does not ingest pull records from the firehose**. Here's the architectural difference:
+
+### Issues (✅ Works):
+1. **Jetstream subscription**: `appview/state/state.go:109` subscribes to `sh.tangled.repo.issue`
+2. **Firehose ingester**: `appview/ingester.go:79-80` has `ingestIssue()` function
+3. **Pattern**: atproto record is source of truth → firehose keeps database synchronized
+4. **Result**: MCP tools work! Create issue via atproto → appears on tangled.org
+
+### Pulls (❌ Broken):
+1. **No jetstream subscription**: `tangled.RepoPullNSID` is **missing** from subscription list
+2. **No firehose ingester**: No `ingestPull()` function exists in `appview/ingester.go`
+3. **Pattern**: Database is source of truth → atproto record is decorative
+4. **Web UI flow** (`appview/pulls/pulls.go:1196`):
+   - Creates DB entry FIRST via `db.NewPull()`
+   - THEN creates atproto record as "announcement"
+5. **Result**: MCP-created PRs are **orphan records** that exist on PDS but never appear on tangled.org
+
+### Why this design exists
+
+Looking at the code (`appview/pulls/pulls.go`), pulls have:
+- **Submissions array**: Multiple rounds of patches (DB-only concept)
+- **Size concerns**: Patches can be megabytes (expensive in atproto)
+- **Complexity**: Appview manages pull state in its database with features not in atproto schema
+- **Pragmatism**: They wanted to ship pulls quickly, made DB the source of truth
+
+### Evidence
+
+```bash
+# Issues are subscribed in jetstream
+grep -n "RepoIssueNSID" sandbox/tangled-core/appview/state/state.go
+# 109:			tangled.RepoIssueNSID,
+
+# Pulls are NOT subscribed
+grep -n "RepoPullNSID" sandbox/tangled-core/appview/state/state.go
+# (no results)
+
+# Issues have an ingester
+grep -A 2 "RepoIssueNSID:" sandbox/tangled-core/appview/ingester.go
+# case tangled.RepoIssueNSID:
+#     err = i.ingestIssue(ctx, e)
+
+# Pulls do NOT have an ingester
+grep "RepoPullNSID:" sandbox/tangled-core/appview/ingester.go
+# (no results)
+```
+
+### Conclusion
+
+**Pull request support cannot be added to tangled-mcp** without changes to tangled-core (adding firehose consumer). The design below is architecturally sound but incompatible with tangled's current implementation.
+
+---
+
 ## design principle: gh CLI parity
 
 **goal**: tangled-mcp pull request tools should be a subset of `gh pr` commands with matching semantics
