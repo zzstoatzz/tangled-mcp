@@ -10,14 +10,18 @@ class TestRepoIdentifierParsing:
         """test that identifiers without slash are rejected"""
         from tangled_mcp._tangled._client import resolve_repo_identifier
 
-        with pytest.raises(ValueError, match="invalid repo format.*expected 'owner/repo'"):
+        with pytest.raises(
+            ValueError, match="invalid repo format.*expected 'owner/repo'"
+        ):
             resolve_repo_identifier("invalid")
 
     def test_invalid_format_empty(self):
         """test that empty identifiers are rejected"""
         from tangled_mcp._tangled._client import resolve_repo_identifier
 
-        with pytest.raises(ValueError, match="invalid repo format.*expected 'owner/repo'"):
+        with pytest.raises(
+            ValueError, match="invalid repo format.*expected 'owner/repo'"
+        ):
             resolve_repo_identifier("")
 
     def test_valid_format_with_handle(self):

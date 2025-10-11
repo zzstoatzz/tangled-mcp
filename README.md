@@ -44,7 +44,9 @@ all tools accept repositories in `owner/repo` format (e.g., `zzstoatzz/tangled-m
 - `list_repo_branches(repo, limit, cursor)` - list branches for a repository
 
 ### issues
-- `create_repo_issue(repo, title, body)` - create an issue on a repository
+- `create_repo_issue(repo, title, body, labels)` - create an issue with optional labels
+- `update_repo_issue(repo, issue_id, title, body, labels)` - update an issue's title, body, and/or labels
+- `delete_repo_issue(repo, issue_id)` - delete an issue
 - `list_repo_issues(repo, limit, cursor)` - list issues for a repository
 
 ## development

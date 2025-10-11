@@ -2,11 +2,15 @@
 
 from tangled_mcp._tangled._client import (
     _get_authenticated_client,
-    create_issue,
     get_service_token,
     list_branches,
-    list_repo_issues,
     resolve_repo_identifier,
+)
+from tangled_mcp._tangled._issues import (
+    create_issue,
+    delete_issue,
+    list_repo_issues,
+    update_issue,
 )
 
 __all__ = [
@@ -14,6 +18,8 @@ __all__ = [
     "get_service_token",
     "list_branches",
     "create_issue",
+    "update_issue",
+    "delete_issue",
     "list_repo_issues",
     "resolve_repo_identifier",
 ]

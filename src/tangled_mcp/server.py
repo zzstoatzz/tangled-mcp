@@ -88,22 +88,100 @@ def create_repo_issue(
     ],
     title: Annotated[str, Field(description="issue title")],
     body: Annotated[str | None, Field(description="issue body/description")] = None,
-) -> dict[str, str]:
+    labels: Annotated[
+        list[str] | None,
+        Field(
+            description="optional list of label names (e.g., ['good-first-issue', 'bug']) "
+            "to apply to the issue"
+        ),
+    ] = None,
+) -> dict[str, str | int]:
     """create an issue on a repository
 
     Args:
         repo: repository identifier in 'owner/repo' format
         title: issue title
         body: optional issue body/description
+        labels: optional list of label names to apply
 
     Returns:
-        dict with uri and cid of created issue
+        dict with uri, cid, and issueId of created issue
     """
     # resolve owner/repo to (knot, did/repo)
     knot, repo_id = _tangled.resolve_repo_identifier(repo)
     # create_issue doesn't need knot (uses atproto putRecord, not XRPC)
-    response = _tangled.create_issue(repo_id, title, body)
+    response = _tangled.create_issue(repo_id, title, body, labels)
+    return {
+        "uri": response["uri"],
+        "cid": response["cid"],
+        "issueId": response["issueId"],
+    }
+
+
+@tangled_mcp.tool
+def update_repo_issue(
+    repo: Annotated[
+        str,
+        Field(
+            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
+        ),
+    ],
+    issue_id: Annotated[int, Field(description="issue number (e.g., 1, 2, 3...)")],
+    title: Annotated[str | None, Field(description="new issue title")] = None,
+    body: Annotated[str | None, Field(description="new issue body/description")] = None,
+    labels: Annotated[
+        list[str] | None,
+        Field(
+            description="list of label names to SET (replaces all existing labels). "
+            "use empty list [] to remove all labels"
+        ),
+    ] = None,
+) -> dict[str, str]:
+    """update an existing issue on a repository
+
+    Args:
+        repo: repository identifier in 'owner/repo' format
+        issue_id: issue number to update
+        title: optional new title (if None, keeps existing)
+        body: optional new body (if None, keeps existing)
+        labels: optional list of label names to SET (replaces existing)
+
+    Returns:
+        dict with uri and cid of updated issue
+    """
+    # resolve owner/repo to (knot, did/repo)
+    knot, repo_id = _tangled.resolve_repo_identifier(repo)
+    # update_issue doesn't need knot (uses atproto putRecord, not XRPC)
+    response = _tangled.update_issue(repo_id, issue_id, title, body, labels)
     return {"uri": response["uri"], "cid": response["cid"]}
+
+
+@tangled_mcp.tool
+def delete_repo_issue(
+    repo: Annotated[
+        str,
+        Field(
+            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
+        ),
+    ],
+    issue_id: Annotated[
+        int, Field(description="issue number to delete (e.g., 1, 2, 3...)")
+    ],
+) -> dict[str, str]:
+    """delete an issue from a repository
+
+    Args:
+        repo: repository identifier in 'owner/repo' format
+        issue_id: issue number to delete
+
+    Returns:
+        dict with uri of deleted issue
+    """
+    # resolve owner/repo to (knot, did/repo)
+    knot, repo_id = _tangled.resolve_repo_identifier(repo)
+    # delete_issue doesn't need knot (uses atproto deleteRecord, not XRPC)
+    response = _tangled.delete_issue(repo_id, issue_id)
+    return {"uri": response["uri"]}
 
 
 @tangled_mcp.tool
