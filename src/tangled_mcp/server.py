@@ -67,10 +67,11 @@ def list_repo_branches(
     branches = []
     if "branches" in response:
         for branch_data in response["branches"]:
+            ref = branch_data.get("reference", {})
             branches.append(
                 BranchInfo(
-                    name=branch_data.get("name", ""),
-                    sha=branch_data.get("sha", ""),
+                    name=ref.get("name", ""),
+                    sha=ref.get("hash", ""),
                 )
             )
 
