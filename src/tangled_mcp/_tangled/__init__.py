@@ -6,6 +6,7 @@ from tangled_mcp._tangled._client import (
     get_service_token,
     list_branches,
     list_repo_issues,
+    resolve_repo_identifier,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "list_branches",
     "create_issue",
     "list_repo_issues",
+    "resolve_repo_identifier",
 ]

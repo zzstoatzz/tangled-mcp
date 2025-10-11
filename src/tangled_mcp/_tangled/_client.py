@@ -9,6 +9,62 @@ from atproto import Client, models
 from tangled_mcp.settings import TANGLED_APPVIEW_URL, TANGLED_DID, settings
 
 
+def resolve_repo_identifier(owner_slash_repo: str) -> str:
+    """resolve owner/repo format to repository AT-URI
+
+    Args:
+        owner_slash_repo: repository identifier in "owner/repo" format
+                         (e.g., "zzstoatzz/tangled-mcp")
+
+    Returns:
+        repository AT-URI (e.g., "at://did:plc:.../sh.tangled.repo.repo/...")
+
+    Raises:
+        ValueError: if format is invalid or repo not found
+    """
+    if "/" not in owner_slash_repo:
+        raise ValueError(
+            f"invalid repo format: '{owner_slash_repo}'. expected 'owner/repo'"
+        )
+
+    owner, repo_name = owner_slash_repo.split("/", 1)
+    client = _get_authenticated_client()
+
+    # resolve owner (handle or DID) to DID
+    if owner.startswith("did:"):
+        owner_did = owner
+    else:
+        # strip @ prefix if present
+        owner = owner.lstrip("@")
+        # resolve handle to DID
+        try:
+            response = client.com.atproto.identity.resolve_handle(
+                params={"handle": owner}
+            )
+            owner_did = response.did
+        except Exception as e:
+            raise ValueError(f"failed to resolve handle '{owner}': {e}") from e
+
+    # query owner's repo collection to find repo by name
+    try:
+        records = client.com.atproto.repo.list_records(
+            models.ComAtprotoRepoListRecords.Params(
+                repo=owner_did,
+                collection="sh.tangled.repo.repo",
+                limit=100,  # should be enough for most users
+            )
+        )
+    except Exception as e:
+        raise ValueError(f"failed to list repos for '{owner}': {e}") from e
+
+    # find repo with matching name
+    for record in records.records:
+        if hasattr(record.value, "name") and record.value.name == repo_name:
+            return record.uri
+
+    raise ValueError(f"repo '{repo_name}' not found for owner '{owner}'")
+
+
 def _get_authenticated_client() -> Client:
     """get authenticated AT Protocol client
 

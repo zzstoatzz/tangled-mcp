@@ -1503,7 +1503,6 @@ wheels = [
 
 [[package]]
 name = "tangled-mcp"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "atproto" },

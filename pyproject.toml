@@ -1,6 +1,6 @@
 [project]
 name = "tangled-mcp"
-version = "0.1.0"
+dynamic = ["version"]
 description = "MCP server for Tangled git collaboration platform"
 readme = "README.md"
 authors = [{ name = "nate", email = "zzstoatzz@protonmail.com" }]
@@ -18,8 +18,17 @@ dependencies = [
 tangled-mcp = "tangled_mcp.__main__:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
 
 [tool.hatch.metadata]
 allow-direct-references = true

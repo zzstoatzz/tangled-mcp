@@ -40,7 +40,9 @@ def tangled_status() -> dict[str, str | bool]:
 def list_repo_branches(
     repo: Annotated[
         str,
-        Field(description="repository identifier in format 'did:plc:.../repoName'"),
+        Field(
+            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
+        ),
     ],
     limit: Annotated[
         int, Field(ge=1, le=100, description="maximum number of branches to return")
@@ -50,14 +52,16 @@ def list_repo_branches(
     """list branches for a repository
 
     Args:
-        repo: repository identifier (e.g., 'did:plc:.../repoName')
+        repo: repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')
         limit: maximum number of branches to return (1-100)
         cursor: optional pagination cursor
 
     Returns:
         list of branches with optional cursor for pagination
     """
-    response = _tangled.list_branches(repo, limit, cursor)
+    # resolve owner/repo to AT-URI
+    repo_uri = _tangled.resolve_repo_identifier(repo)
+    response = _tangled.list_branches(repo_uri, limit, cursor)
 
     # parse response into BranchInfo objects
     branches = []
@@ -78,7 +82,7 @@ def create_repo_issue(
     repo: Annotated[
         str,
         Field(
-            description="repository AT-URI (e.g., 'at://did:plc:.../sh.tangled.repo.repo/...')"
+            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
         ),
     ],
     title: Annotated[str, Field(description="issue title")],
@@ -87,14 +91,16 @@ def create_repo_issue(
     """create an issue on a repository
 
     Args:
-        repo: repository AT-URI
+        repo: repository identifier in 'owner/repo' format
         title: issue title
         body: optional issue body/description
 
     Returns:
         dict with uri and cid of created issue
     """
-    response = _tangled.create_issue(repo, title, body)
+    # resolve owner/repo to AT-URI
+    repo_uri = _tangled.resolve_repo_identifier(repo)
+    response = _tangled.create_issue(repo_uri, title, body)
     return {"uri": response["uri"], "cid": response["cid"]}
 
 
@@ -102,7 +108,9 @@ def create_repo_issue(
 def list_repo_issues(
     repo: Annotated[
         str,
-        Field(description="repository AT-URI to filter issues by"),
+        Field(
+            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
+        ),
     ],
     limit: Annotated[
         int, Field(ge=1, le=100, description="maximum number of issues to return")
@@ -112,14 +120,16 @@ def list_repo_issues(
     """list issues for a repository
 
     Args:
-        repo: repository AT-URI to filter by
+        repo: repository identifier in 'owner/repo' format
         limit: maximum number of issues to return (1-100)
         cursor: optional pagination cursor
 
     Returns:
         dict with list of issues and optional cursor
     """
-    response = _tangled.list_repo_issues(repo, limit, cursor)
+    # resolve owner/repo to AT-URI
+    repo_uri = _tangled.resolve_repo_identifier(repo)
+    response = _tangled.list_repo_issues(repo_uri, limit, cursor)
 
     return {
         "issues": response["issues"],

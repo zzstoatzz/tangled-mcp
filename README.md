@@ -38,6 +38,8 @@ uv run tangled-mcp
 
 ## tools
 
+all tools accept repositories in `owner/repo` format (e.g., `zzstoatzz/tangled-mcp`). handles (with or without `@` prefix) and DIDs are both supported for the owner.
+
 ### repositories
 - `list_repo_branches(repo, limit, cursor)` - list branches for a repository
 
