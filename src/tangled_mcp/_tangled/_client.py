@@ -9,18 +9,20 @@ from atproto import Client, models
 from tangled_mcp.settings import TANGLED_APPVIEW_URL, TANGLED_DID, settings
 
 
-def resolve_repo_identifier(owner_slash_repo: str) -> str:
-    """resolve owner/repo format to repository AT-URI
+def resolve_repo_identifier(owner_slash_repo: str) -> tuple[str, str]:
+    """resolve owner/repo format to (knot, did/repo) for tangled XRPC
 
     Args:
-        owner_slash_repo: repository identifier in "owner/repo" format
-                         (e.g., "zzstoatzz/tangled-mcp")
+        owner_slash_repo: repository identifier in "owner/repo" or "@owner/repo" format
+                         (e.g., "zzstoatzz.io/tangled-mcp" or "@zzstoatzz.io/tangled-mcp")
 
     Returns:
-        repository AT-URI (e.g., "at://did:plc:.../sh.tangled.repo.repo/...")
+        tuple of (knot_url, repo_identifier) where:
+        - knot_url: hostname of knot hosting the repo (e.g., "knot1.tangled.sh")
+        - repo_identifier: "did/repo" format (e.g., "did:plc:.../tangled-mcp")
 
     Raises:
-        ValueError: if format is invalid or repo not found
+        ValueError: if format is invalid, handle cannot be resolved, or repo not found
     """
     if "/" not in owner_slash_repo:
         raise ValueError(
@@ -45,22 +47,25 @@ def resolve_repo_identifier(owner_slash_repo: str) -> str:
         except Exception as e:
             raise ValueError(f"failed to resolve handle '{owner}': {e}") from e
 
-    # query owner's repo collection to find repo by name
+    # query owner's repo collection to find repo and get knot
     try:
         records = client.com.atproto.repo.list_records(
             models.ComAtprotoRepoListRecords.Params(
                 repo=owner_did,
-                collection="sh.tangled.repo.repo",
-                limit=100,  # should be enough for most users
+                collection="sh.tangled.repo",  # correct collection name
+                limit=100,
             )
         )
     except Exception as e:
         raise ValueError(f"failed to list repos for '{owner}': {e}") from e
 
-    # find repo with matching name
+    # find repo with matching name and extract knot
     for record in records.records:
         if hasattr(record.value, "name") and record.value.name == repo_name:
-            return record.uri
+            knot = getattr(record.value, "knot", None)
+            if not knot:
+                raise ValueError(f"repo '{repo_name}' has no knot information")
+            return (knot, f"{owner_did}/{repo_name}")
 
     raise ValueError(f"repo '{repo_name}' not found for owner '{owner}'")
 
@@ -106,19 +111,25 @@ def get_service_token() -> str:
 def make_tangled_request(
     method: str,
     params: dict[str, Any] | None = None,
+    knot: str | None = None,
 ) -> dict[str, Any]:
-    """make an XRPC request to tangled's appview
+    """make an XRPC request to tangled's knot
 
     Args:
         method: XRPC method (e.g., 'sh.tangled.repo.branches')
         params: query parameters for the request
+        knot: optional knot hostname (if not provided, must be in params["repo"])
 
     Returns:
         response data from tangled
     """
     token = get_service_token()
 
-    url = f"{TANGLED_APPVIEW_URL}/xrpc/{method}"
+    # if knot not provided, extract from repo identifier
+    if not knot and params and "repo" in params:
+        raise ValueError("knot must be provided or repo must be resolved first")
+
+    url = f"https://{knot}/xrpc/{method}"
 
     response = httpx.get(
         url,
@@ -132,12 +143,13 @@ def make_tangled_request(
 
 
 def list_branches(
-    repo: str, limit: int = 50, cursor: str | None = None
+    knot: str, repo: str, limit: int = 50, cursor: str | None = None
 ) -> dict[str, Any]:
     """list branches for a repository
 
     Args:
-        repo: repository identifier (e.g., 'did:plc:.../repoName')
+        knot: knot hostname (e.g., 'knot1.tangled.sh')
+        repo: repository identifier in "did/repo" format (e.g., 'did:plc:.../repoName')
         limit: maximum number of branches to return
         cursor: pagination cursor
 
@@ -148,7 +160,7 @@ def list_branches(
     if cursor:
         params["cursor"] = cursor
 
-    return make_tangled_request("sh.tangled.repo.branches", params)
+    return make_tangled_request("sh.tangled.repo.branches", params, knot=knot)
 
 
 def create_issue(repo: str, title: str, body: str | None = None) -> dict[str, Any]:

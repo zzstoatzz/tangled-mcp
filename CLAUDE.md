@@ -11,10 +11,20 @@
 - `git push origin main` → both remotes
 
 ## tools
-- all accept `owner/repo` format (e.g., `zzstoatzz/tangled-mcp`)
-- server-side resolution: handle → DID → repo AT-URI
+- all accept `owner/repo` or `@owner/repo` format (e.g., `zzstoatzz/tangled-mcp`)
+- server-side resolution:
+  1. handle → DID (via atproto identity resolution)
+  2. query `sh.tangled.repo` collection on owner's PDS
+  3. extract knot hostname and repo name from record
+  4. call knot's XRPC endpoint (e.g., `https://knot1.tangled.sh/xrpc/...`)
 
 ## dev
 - justfile: `setup`, `test`, `check`, `push`
 - versioning: uv-dynamic-versioning (git tags)
 - type checking: ty + ruff (I, UP)
+
+## architecture notes
+- repos stored as atproto records in collection `sh.tangled.repo` (NOT `sh.tangled.repo.repo`)
+- each repo record contains `knot` field indicating hosting server
+- appview (tangled.org) uses web routes, NOT XRPC
+- knots (e.g., knot1.tangled.sh) expose XRPC endpoints for git operations

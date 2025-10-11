@@ -55,6 +55,8 @@ python_functions = ["test_*"]
 filterwarnings = [
     # upstream atproto issue: https://github.com/MarshalX/atproto/issues/625
     "ignore::pydantic.warnings.UnsupportedFieldAttributeWarning",
+    # upstream: atproto SDK uses deprecated httpx API
+    "ignore::DeprecationWarning:httpx",
 ]
 
 [tool.ty.src]

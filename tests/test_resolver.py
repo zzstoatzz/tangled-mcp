@@ -31,12 +31,16 @@ class TestRepoIdentifierParsing:
             resolve_repo_identifier("owner/repo")
 
     def test_valid_format_with_at_prefix(self):
-        """test that @owner/repo format is accepted"""
+        """test that @owner/repo and owner/repo resolve identically"""
         from tangled_mcp._tangled._client import resolve_repo_identifier
 
-        # this will fail at the resolution step, but not at parsing
-        with pytest.raises(Exception):  # will fail during actual resolution
+        # both formats should behave the same (@ is stripped internally)
+        # they'll both fail resolution with fake handle, but in the same way
+        with pytest.raises(ValueError, match="failed to resolve handle 'owner'"):
             resolve_repo_identifier("@owner/repo")
+
+        with pytest.raises(ValueError, match="failed to resolve handle 'owner'"):
+            resolve_repo_identifier("owner/repo")
 
     def test_valid_format_with_did(self):
         """test that did:plc:.../repo format is accepted"""

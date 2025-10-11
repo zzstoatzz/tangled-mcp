@@ -59,9 +59,9 @@ def list_repo_branches(
     Returns:
         list of branches with optional cursor for pagination
     """
-    # resolve owner/repo to AT-URI
-    repo_uri = _tangled.resolve_repo_identifier(repo)
-    response = _tangled.list_branches(repo_uri, limit, cursor)
+    # resolve owner/repo to (knot, did/repo)
+    knot, repo_id = _tangled.resolve_repo_identifier(repo)
+    response = _tangled.list_branches(knot, repo_id, limit, cursor)
 
     # parse response into BranchInfo objects
     branches = []
@@ -98,9 +98,10 @@ def create_repo_issue(
     Returns:
         dict with uri and cid of created issue
     """
-    # resolve owner/repo to AT-URI
-    repo_uri = _tangled.resolve_repo_identifier(repo)
-    response = _tangled.create_issue(repo_uri, title, body)
+    # resolve owner/repo to (knot, did/repo)
+    knot, repo_id = _tangled.resolve_repo_identifier(repo)
+    # create_issue doesn't need knot (uses atproto putRecord, not XRPC)
+    response = _tangled.create_issue(repo_id, title, body)
     return {"uri": response["uri"], "cid": response["cid"]}
 
 
@@ -127,9 +128,10 @@ def list_repo_issues(
     Returns:
         dict with list of issues and optional cursor
     """
-    # resolve owner/repo to AT-URI
-    repo_uri = _tangled.resolve_repo_identifier(repo)
-    response = _tangled.list_repo_issues(repo_uri, limit, cursor)
+    # resolve owner/repo to (knot, did/repo)
+    knot, repo_id = _tangled.resolve_repo_identifier(repo)
+    # list_repo_issues doesn't need knot (queries atproto records, not XRPC)
+    response = _tangled.list_repo_issues(repo_id, limit, cursor)
 
     return {
         "issues": response["issues"],
