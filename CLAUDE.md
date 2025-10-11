@@ -9,11 +9,18 @@
 - `TANGLED_APPVIEW_URL` + `TANGLED_DID` are constants (not user-configurable)
 - `TANGLED_PDS_URL` optional (auto-discovery from handle unless custom PDS)
 
+## deployment
+- repo mirrored to both tangled and github
+- single `git push origin main` pushes to both remotes
+- use `just push "message"` for convenience
+- github: https://github.com/zzstoatzz/tangled-mcp
+- tangled: git@tangled.sh:zzstoatzz.io/tangled-mcp
+
 ## code quality
 - ruff: import sorting (I), pyupgrade (UP)
 - ty: type checking configured
 - pre-commit: ruff only
-- justfile: setup, test, check
+- justfile: setup, test, check, push
 
 ## testing
 - use in-memory transport (pass FastMCP directly to Client)

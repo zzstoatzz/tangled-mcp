@@ -2,6 +2,8 @@
 
 MCP server for [Tangled](https://tangled.org) - a git collaboration platform built on AT Protocol.
 
+> **note**: this repository is mirrored to [GitHub](https://github.com/zzstoatzz/tangled-mcp) for deployment via [FastMCP Cloud](https://fastmcp.cloud).
+
 ## installation
 
 ```bash
