@@ -377,10 +377,12 @@ def list_repo_issues(
 
     # filter issues by repo
     issues = []
+    issue_uris = []
     for record in response.records:
         if (
             repo := getattr(record.value, "repo", None)
         ) is not None and repo == repo_at_uri:
+            issue_uris.append(record.uri)
             issues.append(
                 {
                     "uri": record.uri,
@@ -389,10 +391,88 @@ def list_repo_issues(
                     "title": getattr(record.value, "title", ""),
                     "body": getattr(record.value, "body", None),
                     "createdAt": getattr(record.value, "createdAt", ""),
+                    "labels": [],  # will be populated below
                 }
             )
 
+    # fetch label ops and correlate with issues
+    if issue_uris:
+        label_ops = client.com.atproto.repo.list_records(
+            models.ComAtprotoRepoListRecords.Params(
+                repo=client.me.did,
+                collection="sh.tangled.label.op",
+                limit=100,
+            )
+        )
+
+        # build map of issue_uri -> current label URIs
+        issue_labels_map: dict[str, set[str]] = {uri: set() for uri in issue_uris}
+        for op_record in label_ops.records:
+            if hasattr(op_record.value, "subject") and op_record.value.subject in issue_labels_map:
+                subject_uri = op_record.value.subject
+                if hasattr(op_record.value, "add"):
+                    for operand in op_record.value.add:
+                        if hasattr(operand, "key"):
+                            issue_labels_map[subject_uri].add(operand.key)
+                if hasattr(op_record.value, "delete"):
+                    for operand in op_record.value.delete:
+                        if hasattr(operand, "key"):
+                            issue_labels_map[subject_uri].discard(operand.key)
+
+        # extract label names from URIs and add to issues
+        for issue in issues:
+            label_uris = issue_labels_map.get(issue["uri"], set())
+            issue["labels"] = [uri.split("/")[-1] for uri in label_uris]
+
     return {"issues": issues, "cursor": response.cursor}
+
+
+def list_repo_labels(repo_id: str) -> list[str]:
+    """list available labels for a repository
+
+    Args:
+        repo_id: repository identifier in "did/repo" format
+
+    Returns:
+        list of available label names for the repo
+    """
+    client = _get_authenticated_client()
+
+    if not client.me:
+        raise RuntimeError("client not authenticated")
+
+    # parse repo_id to get owner_did and repo_name
+    if "/" not in repo_id:
+        raise ValueError(f"invalid repo_id format: {repo_id}")
+
+    owner_did, repo_name = repo_id.split("/", 1)
+
+    # get the repo's subscribed label definitions
+    records = client.com.atproto.repo.list_records(
+        models.ComAtprotoRepoListRecords.Params(
+            repo=owner_did,
+            collection="sh.tangled.repo",
+            limit=100,
+        )
+    )
+
+    repo_labels: list[str] = []
+    for record in records.records:
+        if (
+            name := getattr(record.value, "name", None)
+        ) is not None and name == repo_name:
+            if (subscribed_labels := getattr(record.value, "labels", None)) is not None:
+                # extract label names from URIs
+                repo_labels = [uri.split("/")[-1] for uri in subscribed_labels]
+            break
+
+    if not repo_labels and not any(
+        (name := getattr(r.value, "name", None)) and name == repo_name
+        for r in records.records
+    ):
+        raise ValueError(f"repo not found: {repo_id}")
+
+    return repo_labels
 
 
 def _get_current_labels(client, issue_uri: str) -> set[str]:
@@ -421,6 +501,41 @@ def _get_current_labels(client, issue_uri: str) -> set[str]:
     return current_labels
 
 
+def _validate_labels(labels: list[str], repo_labels: list[str]) -> None:
+    """validate that all requested labels exist in the repo's subscribed labels
+
+    Args:
+        labels: list of label names or URIs to validate
+        repo_labels: list of label definition URIs the repo subscribes to
+
+    Raises:
+        ValueError: if any labels are invalid, listing available labels
+    """
+    # extract available label names from repo's subscribed label URIs
+    available_labels = [uri.split("/")[-1] for uri in repo_labels]
+
+    # check each requested label
+    invalid_labels = []
+    for label in labels:
+        if label.startswith("at://"):
+            # if it's a full URI, check if it's in repo_labels
+            if label not in repo_labels:
+                invalid_labels.append(label)
+        else:
+            # if it's a name, check if it matches any available label
+            if not any(
+                label.lower() == available.lower() for available in available_labels
+            ):
+                invalid_labels.append(label)
+
+    # fail loudly if any labels are invalid
+    if invalid_labels:
+        raise ValueError(
+            f"invalid labels: {invalid_labels}\n"
+            f"available labels for this repo: {sorted(available_labels)}"
+        )
+
+
 def _apply_labels(
     client,
     issue_uri: str,
@@ -436,7 +551,13 @@ def _apply_labels(
         labels: list of label names or URIs to apply
         repo_labels: list of label definition URIs the repo subscribes to
         current_labels: set of currently applied label URIs
+
+    Raises:
+        ValueError: if any labels are invalid (via _validate_labels)
     """
+    # validate labels before attempting to apply
+    _validate_labels(labels, repo_labels)
+
     # resolve label names to URIs
     new_label_uris = set()
     for label in labels:

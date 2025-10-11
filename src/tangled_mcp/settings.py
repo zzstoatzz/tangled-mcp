@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     # optional: specify PDS URL if auto-discovery doesn't work
     # leave empty for auto-discovery from handle
-    tangled_pds_url: str | None = Field(default=None)
+    tangled_pds_url: str | None = None
 
 
 # tangled service constants

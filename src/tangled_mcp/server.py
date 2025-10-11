@@ -206,3 +206,26 @@ def list_repo_issues(
     response = _tangled.list_repo_issues(repo_id, limit, cursor)
 
     return ListIssuesResult.from_api_response(response)
+
+
+@tangled_mcp.tool
+def list_repo_labels(
+    repo: Annotated[
+        str,
+        Field(
+            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
+        ),
+    ],
+) -> list[str]:
+    """list available labels for a repository
+
+    Args:
+        repo: repository identifier in 'owner/repo' format
+
+    Returns:
+        list of available label names for the repository
+    """
+    # resolve owner/repo to (knot, did/repo)
+    _, repo_id = _tangled.resolve_repo_identifier(repo)
+    # list_repo_labels doesn't need knot (queries atproto records, not XRPC)
+    return _tangled.list_repo_labels(repo_id)

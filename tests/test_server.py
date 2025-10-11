@@ -22,7 +22,7 @@ class TestServerStructure:
         async with Client(tangled_mcp) as client:
             tools = await client.list_tools()
 
-            assert len(tools) == 5
+            assert len(tools) == 6
 
             tool_names = {tool.name for tool in tools}
             assert "list_repo_branches" in tool_names
@@ -30,6 +30,7 @@ class TestServerStructure:
             assert "update_repo_issue" in tool_names
             assert "delete_repo_issue" in tool_names
             assert "list_repo_issues" in tool_names
+            assert "list_repo_labels" in tool_names
 
     async def test_list_repo_branches_tool_schema(self):
         """test list_repo_branches tool has correct schema"""
