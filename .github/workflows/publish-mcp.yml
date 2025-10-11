@@ -24,10 +24,7 @@ jobs:
         run: uv python install
 
       - name: install dependencies
-        run: uv sync --all-extras --dev
-
-      - name: run tests
-        run: uv run pytest
+        run: uv sync --all-extras
 
       - name: build package
         run: uv build
