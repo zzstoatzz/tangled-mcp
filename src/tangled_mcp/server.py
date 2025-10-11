@@ -1,0 +1,127 @@
+"""tangled MCP server - provides tools and resources for tangled git platform"""
+
+from typing import Annotated, Any
+
+from fastmcp import FastMCP
+from pydantic import Field
+
+from tangled_mcp import _tangled
+from tangled_mcp.types import BranchInfo, ListBranchesResult
+
+tangled_mcp = FastMCP("tangled MCP server")
+
+
+# resources - read-only operations
+@tangled_mcp.resource("tangled://status")
+def tangled_status() -> dict[str, str | bool]:
+    """check the status of the tangled connection"""
+    client = _tangled._get_authenticated_client()
+
+    # verify can get tangled service token
+    try:
+        _tangled.get_service_token()
+        can_access_tangled = True
+    except Exception:
+        can_access_tangled = False
+
+    if not client.me:
+        raise RuntimeError("client not authenticated")
+
+    return {
+        "handle": client.me.handle,
+        "did": client.me.did,
+        "pds_authenticated": True,
+        "tangled_accessible": can_access_tangled,
+    }
+
+
+# tools - actions that query or modify state
+@tangled_mcp.tool
+def list_repo_branches(
+    repo: Annotated[
+        str,
+        Field(description="repository identifier in format 'did:plc:.../repoName'"),
+    ],
+    limit: Annotated[
+        int, Field(ge=1, le=100, description="maximum number of branches to return")
+    ] = 50,
+    cursor: Annotated[str | None, Field(description="pagination cursor")] = None,
+) -> ListBranchesResult:
+    """list branches for a repository
+
+    Args:
+        repo: repository identifier (e.g., 'did:plc:.../repoName')
+        limit: maximum number of branches to return (1-100)
+        cursor: optional pagination cursor
+
+    Returns:
+        list of branches with optional cursor for pagination
+    """
+    response = _tangled.list_branches(repo, limit, cursor)
+
+    # parse response into BranchInfo objects
+    branches = []
+    if "branches" in response:
+        for branch_data in response["branches"]:
+            branches.append(
+                BranchInfo(
+                    name=branch_data.get("name", ""),
+                    sha=branch_data.get("sha", ""),
+                )
+            )
+
+    return ListBranchesResult(branches=branches, cursor=response.get("cursor"))
+
+
+@tangled_mcp.tool
+def create_repo_issue(
+    repo: Annotated[
+        str,
+        Field(
+            description="repository AT-URI (e.g., 'at://did:plc:.../sh.tangled.repo.repo/...')"
+        ),
+    ],
+    title: Annotated[str, Field(description="issue title")],
+    body: Annotated[str | None, Field(description="issue body/description")] = None,
+) -> dict[str, str]:
+    """create an issue on a repository
+
+    Args:
+        repo: repository AT-URI
+        title: issue title
+        body: optional issue body/description
+
+    Returns:
+        dict with uri and cid of created issue
+    """
+    response = _tangled.create_issue(repo, title, body)
+    return {"uri": response["uri"], "cid": response["cid"]}
+
+
+@tangled_mcp.tool
+def list_repo_issues(
+    repo: Annotated[
+        str,
+        Field(description="repository AT-URI to filter issues by"),
+    ],
+    limit: Annotated[
+        int, Field(ge=1, le=100, description="maximum number of issues to return")
+    ] = 50,
+    cursor: Annotated[str | None, Field(description="pagination cursor")] = None,
+) -> dict[str, Any]:
+    """list issues for a repository
+
+    Args:
+        repo: repository AT-URI to filter by
+        limit: maximum number of issues to return (1-100)
+        cursor: optional pagination cursor
+
+    Returns:
+        dict with list of issues and optional cursor
+    """
+    response = _tangled.list_repo_issues(repo, limit, cursor)
+
+    return {
+        "issues": response["issues"],
+        "cursor": response.get("cursor"),
+    }

@@ -1,0 +1,62 @@
+[project]
+name = "tangled-mcp"
+version = "0.1.0"
+description = "MCP server for Tangled git collaboration platform"
+readme = "README.md"
+authors = [{ name = "nate", email = "zzstoatzz@protonmail.com" }]
+requires-python = ">=3.10"
+dependencies = [
+    "atproto",
+    "fastmcp>=2.12.4",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.11.0",
+    "python-dotenv>=1.1.1",
+    "websockets>=15.0.1",
+]
+
+[project.scripts]
+tangled-mcp = "tangled_mcp.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv.sources]
+atproto = { git = "https://github.com/MarshalX/atproto.git", rev = "refs/pull/605/head" }
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "ruff>=0.14.0",
+    "ty>=0.0.1a22",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+filterwarnings = [
+    # upstream atproto issue: https://github.com/MarshalX/atproto/issues/625
+    "ignore::pydantic.warnings.UnsupportedFieldAttributeWarning",
+]
+
+[tool.ty.src]
+include = ["src", "tests"]
+exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
+
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ruff.lint]
+extend-select = ["I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
