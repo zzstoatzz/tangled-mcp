@@ -28,6 +28,58 @@ TANGLED_PDS_URL=
 
 ## usage
 
+### using with MCP clients
+
+#### claude code
+
+```bash
+# basic setup
+claude mcp add tangled -- uvx tangled-mcp
+
+# with credentials
+claude mcp add tangled \
+  -e TANGLED_HANDLE=your.handle \
+  -e TANGLED_PASSWORD=your-app-password \
+  -- uvx tangled-mcp
+```
+
+#### cursor
+
+add to your cursor settings (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "tangled": {
+      "command": "uvx",
+      "args": ["tangled-mcp"],
+      "env": {
+        "TANGLED_HANDLE": "your.handle",
+        "TANGLED_PASSWORD": "your-app-password"
+      }
+    }
+  }
+}
+```
+
+#### codex cli
+
+```bash
+codex mcp add tangled \
+  --env TANGLED_HANDLE=your.handle \
+  --env TANGLED_PASSWORD=your-app-password \
+  -- uvx tangled-mcp
+```
+
+#### other clients
+
+for clients that support MCP server configuration, use:
+- **command**: `uvx`
+- **args**: `["tangled-mcp"]`
+- **environment variables**: `TANGLED_HANDLE`, `TANGLED_PASSWORD`, and optionally `TANGLED_PDS_URL`
+
+### development usage
+
 ```bash
 uv run tangled-mcp
 ```

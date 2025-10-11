@@ -47,6 +47,43 @@ the workflow automatically:
 5. authenticates using GitHub OIDC
 6. publishes to MCP registry
 
+## cutting a release
+
+to cut a new release:
+
+1. **update server.json version** (both fields must match the version you're releasing)
+   ```json
+   {
+     "version": "0.0.9",
+     "packages": [{
+       "version": "0.0.9"
+     }]
+   }
+   ```
+
+2. **run pre-commit checks**
+   ```bash
+   just check
+   ```
+
+3. **commit and push your changes**
+   ```bash
+   git add .
+   git commit -m "your commit message"
+   git push origin main
+   ```
+
+4. **create and push the version tag**
+   ```bash
+   git tag v0.0.9
+   git push origin v0.0.9
+   ```
+
+5. **verify the release**
+   - workflow: https://github.com/zzstoatzz/tangled-mcp/actions/workflows/publish-mcp.yml
+   - pypi: https://pypi.org/project/tangled-mcp/
+   - mcp registry: `https://registry.modelcontextprotocol.io/v0/servers/io.github.zzstoatzz%2Ftangled-mcp/versions/X.Y.Z`
+
 ## key learnings
 
 ### mcp-publisher installation

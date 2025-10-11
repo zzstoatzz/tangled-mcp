@@ -51,9 +51,7 @@ def create_issue(
         ) is not None and name == repo_name:
             repo_at_uri = record.uri
             # get repo's subscribed labels
-            if (
-                subscribed_labels := getattr(record.value, "labels", None)
-            ) is not None:
+            if (subscribed_labels := getattr(record.value, "labels", None)) is not None:
                 repo_labels = subscribed_labels
             break
 
@@ -161,9 +159,7 @@ def update_issue(
     for record in records.records:
         if (name := getattr(record.value, "name", None)) and name == repo_name:
             repo_at_uri = record.uri
-            if (
-                subscribed_labels := getattr(record.value, "labels", None)
-            ) is not None:
+            if (subscribed_labels := getattr(record.value, "labels", None)) is not None:
                 repo_labels = subscribed_labels
             break
 

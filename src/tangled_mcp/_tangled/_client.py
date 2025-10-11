@@ -74,13 +74,24 @@ def _get_authenticated_client() -> Client:
 
     Returns:
         authenticated client connected to user's PDS
+
+    Raises:
+        RuntimeError: if authentication fails (check handle/password)
     """
     if settings.tangled_pds_url:
         client = Client(base_url=settings.tangled_pds_url)
     else:
         client = Client()  # auto-discover from handle
 
-    client.login(settings.tangled_handle, settings.tangled_password)
+    try:
+        client.login(settings.tangled_handle, settings.tangled_password)
+    except Exception as e:
+        raise RuntimeError(
+            f"failed to authenticate with handle '{settings.tangled_handle}'. "
+            f"verify TANGLED_HANDLE and TANGLED_PASSWORD are correct. "
+            f"error: {e}"
+        ) from e
+
     return client
 
 
