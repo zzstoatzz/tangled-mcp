@@ -22,6 +22,7 @@
 - justfile: `setup`, `test`, `check`, `push`
 - versioning: uv-dynamic-versioning (git tags)
 - type checking: ty + ruff (I, UP)
+- remember that `tree` is your friend, better than `ls` and a dream
 - **use `jq` for JSON parsing** (not python pipes)
   - example: `curl -s https://pypi.org/pypi/tangled-mcp/json | jq -r '.info.version'`
 - **never use `sleep`** - poll/check with actual tools instead
