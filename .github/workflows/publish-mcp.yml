@@ -1,0 +1,48 @@
+name: publish to mcp registry
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: set up python
+        run: uv python install
+
+      - name: install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: run tests
+        run: uv run pytest
+
+      - name: build package
+        run: uv build
+
+      - name: publish to pypi
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: uv publish
+
+      - name: install mcp publisher
+        run: |
+          npm install -g @modelcontextprotocol/publisher
+
+      - name: login to mcp registry (github oidc)
+        run: mcp-publisher login github-oidc
+
+      - name: publish to mcp registry
+        run: mcp-publisher publish
