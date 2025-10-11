@@ -10,11 +10,13 @@
 - `TANGLED_PDS_URL` optional (auto-discovery from handle unless custom PDS)
 
 ## deployment
-- repo mirrored to both tangled and github
+- primary development on github (CI/deployment via FastMCP Cloud)
+- mirrored to tangled for dogfooding/showcase
 - single `git push origin main` pushes to both remotes
 - use `just push "message"` for convenience
-- github: https://github.com/zzstoatzz/tangled-mcp
-- tangled: git@tangled.sh:zzstoatzz.io/tangled-mcp
+- **primary**: https://github.com/zzstoatzz/tangled-mcp
+- **mirror**: git@tangled.sh:zzstoatzz.io/tangled-mcp
+- think of github as source of truth since that's where deployment happens
 
 ## code quality
 - ruff: import sorting (I), pyupgrade (UP)
