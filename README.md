@@ -28,9 +28,10 @@ TANGLED_PDS_URL=
 
 ## usage
 
-### using with MCP clients
+<details>
+<summary>MCP client installation instructions</summary>
 
-#### claude code
+### claude code
 
 ```bash
 # basic setup
@@ -43,7 +44,7 @@ claude mcp add tangled \
   -- uvx tangled-mcp
 ```
 
-#### cursor
+### cursor
 
 add to your cursor settings (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
 
@@ -62,7 +63,7 @@ add to your cursor settings (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
 }
 ```
 
-#### codex cli
+### codex cli
 
 ```bash
 codex mcp add tangled \
@@ -71,12 +72,14 @@ codex mcp add tangled \
   -- uvx tangled-mcp
 ```
 
-#### other clients
+### other clients
 
 for clients that support MCP server configuration, use:
 - **command**: `uvx`
 - **args**: `["tangled-mcp"]`
 - **environment variables**: `TANGLED_HANDLE`, `TANGLED_PASSWORD`, and optionally `TANGLED_PDS_URL`
+
+</details>
 
 ### development usage
 

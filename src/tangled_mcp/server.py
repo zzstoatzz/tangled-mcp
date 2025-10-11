@@ -1,12 +1,18 @@
 """tangled MCP server - provides tools and resources for tangled git platform"""
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastmcp import FastMCP
 from pydantic import Field
 
 from tangled_mcp import _tangled
-from tangled_mcp.types import BranchInfo, ListBranchesResult
+from tangled_mcp.types import (
+    CreateIssueResult,
+    DeleteIssueResult,
+    ListBranchesResult,
+    ListIssuesResult,
+    UpdateIssueResult,
+)
 
 tangled_mcp = FastMCP("tangled MCP server")
 
@@ -63,19 +69,7 @@ def list_repo_branches(
     knot, repo_id = _tangled.resolve_repo_identifier(repo)
     response = _tangled.list_branches(knot, repo_id, limit, cursor)
 
-    # parse response into BranchInfo objects
-    branches = []
-    if "branches" in response:
-        for branch_data in response["branches"]:
-            ref = branch_data.get("reference", {})
-            branches.append(
-                BranchInfo(
-                    name=ref.get("name", ""),
-                    sha=ref.get("hash", ""),
-                )
-            )
-
-    return ListBranchesResult(branches=branches, cursor=response.get("cursor"))
+    return ListBranchesResult.from_api_response(response)
 
 
 @tangled_mcp.tool
@@ -95,7 +89,7 @@ def create_repo_issue(
             "to apply to the issue"
         ),
     ] = None,
-) -> dict[str, str | int]:
+) -> CreateIssueResult:
     """create an issue on a repository
 
     Args:
@@ -105,17 +99,14 @@ def create_repo_issue(
         labels: optional list of label names to apply
 
     Returns:
-        dict with uri, cid, and issueId of created issue
+        CreateIssueResult with url (clickable link) and issue_id
     """
     # resolve owner/repo to (knot, did/repo)
     knot, repo_id = _tangled.resolve_repo_identifier(repo)
     # create_issue doesn't need knot (uses atproto putRecord, not XRPC)
     response = _tangled.create_issue(repo_id, title, body, labels)
-    return {
-        "uri": response["uri"],
-        "cid": response["cid"],
-        "issueId": response["issueId"],
-    }
+
+    return CreateIssueResult(repo=repo, issue_id=response["issueId"])
 
 
 @tangled_mcp.tool
@@ -136,7 +127,7 @@ def update_repo_issue(
             "use empty list [] to remove all labels"
         ),
     ] = None,
-) -> dict[str, str]:
+) -> UpdateIssueResult:
     """update an existing issue on a repository
 
     Args:
@@ -147,13 +138,14 @@ def update_repo_issue(
         labels: optional list of label names to SET (replaces existing)
 
     Returns:
-        dict with uri and cid of updated issue
+        UpdateIssueResult with url (clickable link) and issue_id
     """
     # resolve owner/repo to (knot, did/repo)
     knot, repo_id = _tangled.resolve_repo_identifier(repo)
     # update_issue doesn't need knot (uses atproto putRecord, not XRPC)
-    response = _tangled.update_issue(repo_id, issue_id, title, body, labels)
-    return {"uri": response["uri"], "cid": response["cid"]}
+    _tangled.update_issue(repo_id, issue_id, title, body, labels)
+
+    return UpdateIssueResult(repo=repo, issue_id=issue_id)
 
 
 @tangled_mcp.tool
@@ -167,7 +159,7 @@ def delete_repo_issue(
     issue_id: Annotated[
         int, Field(description="issue number to delete (e.g., 1, 2, 3...)")
     ],
-) -> dict[str, str]:
+) -> DeleteIssueResult:
     """delete an issue from a repository
 
     Args:
@@ -175,13 +167,14 @@ def delete_repo_issue(
         issue_id: issue number to delete
 
     Returns:
-        dict with uri of deleted issue
+        DeleteIssueResult with issue_id of deleted issue
     """
     # resolve owner/repo to (knot, did/repo)
-    knot, repo_id = _tangled.resolve_repo_identifier(repo)
+    _, repo_id = _tangled.resolve_repo_identifier(repo)
     # delete_issue doesn't need knot (uses atproto deleteRecord, not XRPC)
-    response = _tangled.delete_issue(repo_id, issue_id)
-    return {"uri": response["uri"]}
+    _tangled.delete_issue(repo_id, issue_id)
+
+    return DeleteIssueResult(issue_id=issue_id)
 
 
 @tangled_mcp.tool
@@ -194,9 +187,9 @@ def list_repo_issues(
     ],
     limit: Annotated[
         int, Field(ge=1, le=100, description="maximum number of issues to return")
-    ] = 50,
+    ] = 20,
     cursor: Annotated[str | None, Field(description="pagination cursor")] = None,
-) -> dict[str, Any]:
+) -> ListIssuesResult:
     """list issues for a repository
 
     Args:
@@ -205,14 +198,11 @@ def list_repo_issues(
         cursor: optional pagination cursor
 
     Returns:
-        dict with list of issues and optional cursor
+        ListIssuesResult with list of issues and optional cursor
     """
     # resolve owner/repo to (knot, did/repo)
-    knot, repo_id = _tangled.resolve_repo_identifier(repo)
+    _, repo_id = _tangled.resolve_repo_identifier(repo)
     # list_repo_issues doesn't need knot (queries atproto records, not XRPC)
     response = _tangled.list_repo_issues(repo_id, limit, cursor)
 
-    return {
-        "issues": response["issues"],
-        "cursor": response.get("cursor"),
-    }
+    return ListIssuesResult.from_api_response(response)
