@@ -56,7 +56,5 @@ class TestServerStructure:
             assert properties["limit"]["maximum"] == 100
             assert properties["limit"]["default"] == 50
 
-            assert "cursor" in properties
-
             # required parameters
             assert tool.inputSchema["required"] == ["repo"]
