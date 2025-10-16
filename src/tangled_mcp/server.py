@@ -53,21 +53,19 @@ def list_repo_branches(
     limit: Annotated[
         int, Field(ge=1, le=100, description="maximum number of branches to return")
     ] = 50,
-    cursor: Annotated[str | None, Field(description="pagination cursor")] = None,
 ) -> ListBranchesResult:
     """list branches for a repository
 
     Args:
         repo: repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')
         limit: maximum number of branches to return (1-100)
-        cursor: optional pagination cursor
 
     Returns:
-        list of branches with optional cursor for pagination
+        list of branches
     """
     # resolve owner/repo to (knot, did/repo)
     knot, repo_id = _tangled.resolve_repo_identifier(repo)
-    response = _tangled.list_branches(knot, repo_id, limit, cursor)
+    response = _tangled.list_branches(knot, repo_id, limit, cursor=None)
 
     return ListBranchesResult.from_api_response(response)
 
@@ -188,22 +186,20 @@ def list_repo_issues(
     limit: Annotated[
         int, Field(ge=1, le=100, description="maximum number of issues to return")
     ] = 20,
-    cursor: Annotated[str | None, Field(description="pagination cursor")] = None,
 ) -> ListIssuesResult:
     """list issues for a repository
 
     Args:
         repo: repository identifier in 'owner/repo' format
         limit: maximum number of issues to return (1-100)
-        cursor: optional pagination cursor
 
     Returns:
-        ListIssuesResult with list of issues and optional cursor
+        ListIssuesResult with list of issues
     """
     # resolve owner/repo to (knot, did/repo)
     _, repo_id = _tangled.resolve_repo_identifier(repo)
     # list_repo_issues doesn't need knot (queries atproto records, not XRPC)
-    response = _tangled.list_repo_issues(repo_id, limit, cursor)
+    response = _tangled.list_repo_issues(repo_id, limit, cursor=None)
 
     return ListIssuesResult.from_api_response(response)
 

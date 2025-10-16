@@ -16,7 +16,6 @@ class ListBranchesResult(BaseModel):
     """result of listing branches"""
 
     branches: list[BranchInfo]
-    cursor: str | None = None
 
     @classmethod
     def from_api_response(cls, response: dict[str, Any]) -> "ListBranchesResult":
@@ -28,8 +27,7 @@ class ListBranchesResult(BaseModel):
                     "branches": [
                         {"reference": {"name": "main", "hash": "abc123"}},
                         ...
-                    ],
-                    "cursor": "optional_cursor"
+                    ]
                 }
 
         Returns:
@@ -46,4 +44,4 @@ class ListBranchesResult(BaseModel):
                     )
                 )
 
-        return cls(branches=branches, cursor=response.get("cursor"))
+        return cls(branches=branches)

@@ -61,7 +61,6 @@ class ListIssuesResult(BaseModel):
     """result of listing issues"""
 
     issues: list[IssueInfo]
-    cursor: str | None = None
 
     @classmethod
     def from_api_response(cls, response: dict[str, Any]) -> "ListIssuesResult":
@@ -80,12 +79,11 @@ class ListIssuesResult(BaseModel):
                             "createdAt": "..."
                         },
                         ...
-                    ],
-                    "cursor": "optional_cursor"
+                    ]
                 }
 
         Returns:
             ListIssuesResult with parsed issues
         """
         issues = [IssueInfo(**issue_data) for issue_data in response.get("issues", [])]
-        return cls(issues=issues, cursor=response.get("cursor"))
+        return cls(issues=issues)

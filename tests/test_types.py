@@ -58,7 +58,6 @@ class TestListBranchesFromAPIResponse:
                 {"reference": {"name": "main", "hash": "abc123"}},
                 {"reference": {"name": "dev", "hash": "def456"}},
             ],
-            "cursor": "next_page",
         }
 
         result = ListBranchesResult.from_api_response(response)
@@ -68,16 +67,6 @@ class TestListBranchesFromAPIResponse:
         assert result.branches[0].sha == "abc123"
         assert result.branches[1].name == "dev"
         assert result.branches[1].sha == "def456"
-        assert result.cursor == "next_page"
-
-    def test_handles_missing_cursor(self):
-        """cursor is optional in API response"""
-        response = {"branches": [{"reference": {"name": "main", "hash": "abc123"}}]}
-
-        result = ListBranchesResult.from_api_response(response)
-
-        assert len(result.branches) == 1
-        assert result.cursor is None
 
     def test_handles_empty_branches(self):
         """handles empty branches list"""
@@ -86,4 +75,3 @@ class TestListBranchesFromAPIResponse:
         result = ListBranchesResult.from_api_response(response)
 
         assert result.branches == []
-        assert result.cursor is None
