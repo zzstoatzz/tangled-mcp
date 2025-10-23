@@ -79,6 +79,10 @@ def create_issue(
 
     next_issue_id = max_issue_id + 1
 
+    # validate labels BEFORE creating the issue to prevent orphaned issues
+    if labels:
+        _validate_labels(labels, repo_labels)
+
     # generate timestamp ID for rkey
     tid = int(datetime.now(timezone.utc).timestamp() * 1000000)
     rkey = str(tid)
