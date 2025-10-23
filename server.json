@@ -1,14 +1,14 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
   "name": "io.github.zzstoatzz/tangled-mcp",
   "title": "Tangled MCP",
   "description": "MCP server for Tangled git platform. Manage repositories, branches, and issues on tangled.org.",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "tangled-mcp",
-      "version": "0.0.10",
+      "version": "0.0.11",
       "transport": {
         "type": "stdio"
       }
