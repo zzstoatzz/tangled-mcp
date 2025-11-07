@@ -2,6 +2,10 @@
 
 MCP server for [Tangled](https://tangled.org) - a git collaboration platform built on AT Protocol.
 
+<a href="https://glama.ai/mcp/servers/@zzstoatzz/tangled-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@zzstoatzz/tangled-mcp/badge" alt="Tangled Server MCP server" />
+</a>
+
 > **note**: this repository is mirrored to [GitHub](https://github.com/zzstoatzz/tangled-mcp) for deployment via [FastMCP Cloud](https://fastmcp.cloud).
 
 ## installation
