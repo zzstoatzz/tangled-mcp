@@ -9,6 +9,7 @@ from tangled_mcp.types._issues import (
     ListIssuesResult,
     UpdateIssueResult,
 )
+from tangled_mcp.types._pulls import ListPullsResult, PullInfo, PullSource, PullTarget
 
 __all__ = [
     "BranchInfo",
@@ -17,6 +18,10 @@ __all__ = [
     "IssueInfo",
     "ListBranchesResult",
     "ListIssuesResult",
+    "ListPullsResult",
+    "PullInfo",
+    "PullSource",
+    "PullTarget",
     "RepoIdentifier",
     "UpdateIssueResult",
 ]

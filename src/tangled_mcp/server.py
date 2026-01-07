@@ -11,6 +11,7 @@ from tangled_mcp.types import (
     DeleteIssueResult,
     ListBranchesResult,
     ListIssuesResult,
+    ListPullsResult,
     UpdateIssueResult,
 )
 
@@ -225,3 +226,35 @@ def list_repo_labels(
     _, repo_id = _tangled.resolve_repo_identifier(repo)
     # list_repo_labels doesn't need knot (queries atproto records, not XRPC)
     return _tangled.list_repo_labels(repo_id)
+
+
+@tangled_mcp.tool
+def list_repo_pulls(
+    repo: Annotated[
+        str,
+        Field(
+            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
+        ),
+    ],
+    limit: Annotated[
+        int, Field(ge=1, le=100, description="maximum number of pulls to return")
+    ] = 20,
+) -> ListPullsResult:
+    """list pull requests created by the authenticated user for a repository
+
+    note: only returns PRs that the authenticated user created (tangled stores
+    PRs in the creator's repo, so we can only see our own PRs).
+
+    Args:
+        repo: repository identifier in 'owner/repo' format
+        limit: maximum number of pulls to return (1-100)
+
+    Returns:
+        ListPullsResult with list of pull requests
+    """
+    # resolve owner/repo to (knot, did/repo)
+    _, repo_id = _tangled.resolve_repo_identifier(repo)
+    # list_repo_pulls doesn't need knot (queries atproto records, not XRPC)
+    response = _tangled.list_repo_pulls(repo_id, limit)
+
+    return ListPullsResult.from_api_response(response["pulls"])

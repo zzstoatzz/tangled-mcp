@@ -13,6 +13,7 @@ from tangled_mcp._tangled._issues import (
     list_repo_labels,
     update_issue,
 )
+from tangled_mcp._tangled._pulls import list_repo_pulls
 
 __all__ = [
     "_get_authenticated_client",
@@ -23,5 +24,6 @@ __all__ = [
     "delete_issue",
     "list_repo_issues",
     "list_repo_labels",
+    "list_repo_pulls",
     "resolve_repo_identifier",
 ]
