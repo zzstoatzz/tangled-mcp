@@ -2,6 +2,49 @@
 
 import pytest
 
+from tangled_mcp._tangled._client import _extract_error_message
+
+
+class TestExtractErrorMessage:
+    """test error message extraction from various exception types"""
+
+    def test_extracts_from_atproto_response(self):
+        """extracts message from atproto RequestErrorBase structure"""
+
+        class MockContent:
+            message = "handle must be a valid handle"
+
+        class MockResponse:
+            content = MockContent()
+
+        class MockException(Exception):
+            response = MockResponse()
+
+        msg = _extract_error_message(MockException())
+        assert msg == "handle must be a valid handle"
+
+    def test_truncates_long_messages(self):
+        """truncates messages longer than 200 chars"""
+        long_msg = "x" * 300
+
+        class MockException(Exception):
+            pass
+
+        e = MockException(long_msg)
+        msg = _extract_error_message(e)
+        assert len(msg) == 203  # 200 + "..."
+        assert msg.endswith("...")
+
+    def test_handles_none_response(self):
+        """handles exception with None response"""
+
+        class MockException(Exception):
+            response = None
+
+        e = MockException("fallback message")
+        msg = _extract_error_message(e)
+        assert msg == "fallback message"
+
 
 class TestRepoIdentifierParsing:
     """test repository identifier format validation"""

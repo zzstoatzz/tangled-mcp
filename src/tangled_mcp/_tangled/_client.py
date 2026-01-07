@@ -10,12 +10,15 @@ from tangled_mcp.settings import TANGLED_DID, settings
 
 def _extract_error_message(e: Exception) -> str:
     """extract a clean, concise error message from an exception"""
-    # handle atproto Response objects with XrpcError
-    if hasattr(e, "content") and hasattr(e.content, "message"):
-        return e.content.message
+    # handle atproto RequestErrorBase (BadRequestError, UnauthorizedError, etc.)
+    # structure: e.response.content.message
+    if hasattr(e, "response") and e.response:
+        content = getattr(e.response, "content", None)
+        if content and hasattr(content, "message"):
+            return content.message
     # handle httpx errors
     if hasattr(e, "response") and hasattr(e.response, "text"):
-        return e.response.text[:200]  # truncate long responses
+        return e.response.text[:200]
     # fallback to string but limit length
     msg = str(e)
     if len(msg) > 200:
