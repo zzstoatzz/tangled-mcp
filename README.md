@@ -102,8 +102,11 @@ all tools accept repositories in `owner/repo` format (e.g., `zzstoatzz/tangled-m
 - `create_repo_issue(repo, title, body, labels)` - create an issue with optional labels
 - `update_repo_issue(repo, issue_id, title, body, labels)` - update an issue's title, body, and/or labels
 - `delete_repo_issue(repo, issue_id)` - delete an issue
-- `list_repo_issues(repo, limit, cursor)` - list issues for a repository
+- `list_repo_issues(repo, limit)` - list issues for a repository
 - `list_repo_labels(repo)` - list available labels for a repository
+
+### pull requests
+- `list_repo_pulls(repo, limit)` - list PRs targeting a repository (only shows PRs you created)
 
 ## development
 
