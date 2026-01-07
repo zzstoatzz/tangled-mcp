@@ -15,18 +15,18 @@ class TestRepoIdentifierValidation:
 
     def test_strips_at_prefix(self):
         """@ prefix is stripped during validation"""
-        result = CreateIssueResult(repo="@owner/repo", issue_id=1)
+        result = CreateIssueResult(repo="@owner/repo", id=1)
         assert result.repo == "owner/repo"
 
     def test_accepts_without_at_prefix(self):
         """repo identifier without @ works"""
-        result = CreateIssueResult(repo="owner/repo", issue_id=1)
+        result = CreateIssueResult(repo="owner/repo", id=1)
         assert result.repo == "owner/repo"
 
     def test_rejects_invalid_format(self):
         """repo identifier without slash is rejected"""
         with pytest.raises(ValidationError, match="invalid repo format"):
-            CreateIssueResult(repo="invalid", issue_id=1)
+            CreateIssueResult(repo="invalid", id=1)
 
 
 class TestIssueResultURLs:
@@ -34,18 +34,26 @@ class TestIssueResultURLs:
 
     def test_create_issue_url(self):
         """create result generates correct tangled.org URL"""
-        result = CreateIssueResult(repo="owner/repo", issue_id=42)
+        result = CreateIssueResult(repo="owner/repo", id=42)
         assert result.url == "https://tangled.org/@owner/repo/issues/42"
 
     def test_update_issue_url(self):
         """update result generates correct tangled.org URL"""
-        result = UpdateIssueResult(repo="owner/repo", issue_id=42)
+        result = UpdateIssueResult(repo="owner/repo", id=42)
         assert result.url == "https://tangled.org/@owner/repo/issues/42"
 
     def test_url_handles_at_prefix_input(self):
         """URL is correct even when input has @ prefix"""
-        result = CreateIssueResult(repo="@owner/repo", issue_id=42)
+        result = CreateIssueResult(repo="@owner/repo", id=42)
         assert result.url == "https://tangled.org/@owner/repo/issues/42"
+
+    def test_repo_excluded_from_serialization(self):
+        """repo field is excluded from JSON output"""
+        result = CreateIssueResult(repo="owner/repo", id=42)
+        data = result.model_dump()
+        assert "repo" not in data
+        assert data["id"] == 42
+        assert "url" in data
 
 
 class TestListBranchesFromAPIResponse:

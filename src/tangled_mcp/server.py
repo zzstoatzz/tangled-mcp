@@ -104,7 +104,7 @@ def create_repo_issue(
     # create_issue doesn't need knot (uses atproto putRecord, not XRPC)
     response = _tangled.create_issue(repo_id, title, body, labels)
 
-    return CreateIssueResult(repo=repo, issue_id=response["issueId"])
+    return CreateIssueResult(repo=repo, id=response["issueId"])
 
 
 @tangled_mcp.tool
@@ -143,7 +143,7 @@ def update_repo_issue(
     # update_issue doesn't need knot (uses atproto putRecord, not XRPC)
     _tangled.update_issue(repo_id, issue_id, title, body, labels)
 
-    return UpdateIssueResult(repo=repo, issue_id=issue_id)
+    return UpdateIssueResult(repo=repo, id=issue_id)
 
 
 @tangled_mcp.tool
@@ -172,7 +172,7 @@ def delete_repo_issue(
     # delete_issue doesn't need knot (uses atproto deleteRecord, not XRPC)
     _tangled.delete_issue(repo_id, issue_id)
 
-    return DeleteIssueResult(issue_id=issue_id)
+    return DeleteIssueResult(id=issue_id)
 
 
 @tangled_mcp.tool

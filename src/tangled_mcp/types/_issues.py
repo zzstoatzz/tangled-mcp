@@ -18,7 +18,7 @@ class IssueInfo(BaseModel):
 
     uri: str
     cid: str
-    issue_id: int = Field(alias="issueId")
+    id: int = Field(alias="issueId")
     title: str
     body: str | None = None
     created_at: str = Field(alias="createdAt")
@@ -28,33 +28,33 @@ class IssueInfo(BaseModel):
 class CreateIssueResult(BaseModel):
     """result of creating an issue"""
 
-    repo: RepoIdentifier
-    issue_id: int
+    repo: RepoIdentifier = Field(exclude=True)
+    id: int
 
     @computed_field
     @property
     def url(self) -> str:
         """construct clickable tangled.org URL"""
-        return _tangled_issue_url(self.repo, self.issue_id)
+        return _tangled_issue_url(self.repo, self.id)
 
 
 class UpdateIssueResult(BaseModel):
     """result of updating an issue"""
 
-    repo: RepoIdentifier
-    issue_id: int
+    repo: RepoIdentifier = Field(exclude=True)
+    id: int
 
     @computed_field
     @property
     def url(self) -> str:
         """construct clickable tangled.org URL"""
-        return _tangled_issue_url(self.repo, self.issue_id)
+        return _tangled_issue_url(self.repo, self.id)
 
 
 class DeleteIssueResult(BaseModel):
     """result of deleting an issue"""
 
-    issue_id: int
+    id: int
 
 
 class ListIssuesResult(BaseModel):
