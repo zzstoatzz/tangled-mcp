@@ -8,6 +8,21 @@ from atproto import Client, models
 from tangled_mcp.settings import TANGLED_DID, settings
 
 
+def _extract_error_message(e: Exception) -> str:
+    """extract a clean, concise error message from an exception"""
+    # handle atproto Response objects with XrpcError
+    if hasattr(e, "content") and hasattr(e.content, "message"):
+        return e.content.message
+    # handle httpx errors
+    if hasattr(e, "response") and hasattr(e.response, "text"):
+        return e.response.text[:200]  # truncate long responses
+    # fallback to string but limit length
+    msg = str(e)
+    if len(msg) > 200:
+        return msg[:200] + "..."
+    return msg
+
+
 def resolve_repo_identifier(owner_slash_repo: str) -> tuple[str, str]:
     """resolve owner/repo format to (knot, did/repo) for tangled XRPC
 
@@ -44,7 +59,9 @@ def resolve_repo_identifier(owner_slash_repo: str) -> tuple[str, str]:
             )
             owner_did = response.did
         except Exception as e:
-            raise ValueError(f"failed to resolve handle '{owner}': {e}") from e
+            # extract clean error message
+            msg = _extract_error_message(e)
+            raise ValueError(f"failed to resolve handle '{owner}': {msg}") from e
 
     # query owner's repo collection to find repo and get knot
     try:
@@ -56,7 +73,8 @@ def resolve_repo_identifier(owner_slash_repo: str) -> tuple[str, str]:
             )
         )
     except Exception as e:
-        raise ValueError(f"failed to list repos for '{owner}': {e}") from e
+        msg = _extract_error_message(e)
+        raise ValueError(f"failed to list repos for '{owner}': {msg}") from e
 
     # find repo with matching name and extract knot
     for record in records.records:
@@ -86,11 +104,8 @@ def _get_authenticated_client() -> Client:
     try:
         client.login(settings.tangled_handle, settings.tangled_password)
     except Exception as e:
-        raise RuntimeError(
-            f"failed to authenticate with handle '{settings.tangled_handle}'. "
-            f"verify TANGLED_HANDLE and TANGLED_PASSWORD are correct. "
-            f"error: {e}"
-        ) from e
+        msg = _extract_error_message(e)
+        raise RuntimeError(f"auth failed for '{settings.tangled_handle}': {msg}") from e
 
     return client
 

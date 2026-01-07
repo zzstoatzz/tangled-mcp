@@ -85,5 +85,10 @@ class ListIssuesResult(BaseModel):
         Returns:
             ListIssuesResult with parsed issues
         """
-        issues = [IssueInfo(**issue_data) for issue_data in response.get("issues", [])]
+        issues = []
+        for issue_data in response.get("issues", []):
+            # skip malformed issues (e.g., missing issueId)
+            if issue_data.get("issueId") is None:
+                continue
+            issues.append(IssueInfo(**issue_data))
         return cls(issues=issues)
