@@ -2,21 +2,28 @@
 
 ## dependencies
 - `uv add` only (NEVER `uv pip`)
-- atproto from PR #605 (service auth)
-- pydantic warning filtered (upstream atproto issue #625)
+- pure httpx — no atproto SDK (writes are two raw XRPC calls to the PDS)
 
 ## deployment
 - **primary**: https://github.com/zzstoatzz/tangled-mcp (FastMCP Cloud)
 - **mirror**: tangled.sh:zzstoatzz.io/tangled-mcp (dogfooding)
 - `git push origin main` → both remotes
 
-## tools
-- all accept `owner/repo` or `@owner/repo` format (e.g., `zzstoatzz/tangled-mcp`)
-- server-side resolution:
-  1. handle → DID (via atproto identity resolution)
-  2. query `sh.tangled.repo` collection on owner's PDS
-  3. extract knot hostname and repo name from record
-  4. call knot's XRPC endpoint (e.g., `https://knot1.tangled.sh/xrpc/...`)
+## architecture (v2, bobbin era)
+- **all reads** go through bobbin, tangled's public read-only XRPC API at
+  `https://api.tangled.org` — no auth. full endpoint map: `docs/bobbin-api.md`
+- **writes** are atproto records put on the user's PDS via
+  `com.atproto.repo.putRecord` (issues, issue states, comments, label ops)
+- `owner/repo` resolution (`bobbin.resolve_repo`):
+  1. handle → DID (public.api.bsky.app resolveHandle)
+  2. fast path: `getRepo?repo=at://did/sh.tangled.repo/<name>` (new records use name as rkey)
+  3. legacy fallback: page `listRepos`, match `value.name` (TID-rkey records)
+- repos have their own DIDs (`repoDid`); issue/PR/pipeline lists are keyed by
+  repo DID (`subject=`), not owner DID
+- issue records are TID-keyed; no sequential issueId. open/closed is derived
+  from separate `sh.tangled.repo.issue.state` records
+- git ops (tree, blob, log, diff, branches...) are proxied by bobbin to the
+  hosting knot — pass the repo record at-uri as `repo=`
 
 ## dev
 - justfile: `setup`, `test`, `check`, `push`
@@ -26,9 +33,3 @@
 - **use `jq` for JSON parsing** (not python pipes)
   - example: `curl -s https://pypi.org/pypi/tangled-mcp/json | jq -r '.info.version'`
 - **never use `sleep`** - poll/check with actual tools instead
-
-## architecture notes
-- repos stored as atproto records in collection `sh.tangled.repo` (NOT `sh.tangled.repo.repo`)
-- each repo record contains `knot` field indicating hosting server
-- appview (tangled.org) uses web routes, NOT XRPC
-- knots (e.g., knot1.tangled.sh) expose XRPC endpoints for git operations

@@ -1,260 +1,451 @@
-"""tangled MCP server - provides tools and resources for tangled git platform"""
+"""tangled MCP server
 
-from typing import Annotated
+reads go through bobbin (api.tangled.org, no auth); writes are atproto
+records put directly on the user's PDS.
+"""
+
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 from pydantic import Field
 
-from tangled_mcp import _tangled
-from tangled_mcp.types import (
-    CreateIssueResult,
-    DeleteIssueResult,
-    ListBranchesResult,
-    ListIssuesResult,
-    ListPullsResult,
-    UpdateIssueResult,
-)
+from tangled_mcp import bobbin, records
+from tangled_mcp.settings import APPVIEW_URL, settings
 
 tangled_mcp = FastMCP("tangled MCP server")
 
+RepoParam = Annotated[
+    str,
+    Field(
+        description="repository as 'owner/repo' (owner may be a handle or DID), "
+        "a repo record at-uri (as returned by search), or a bare repo DID"
+    ),
+]
+IssueParam = Annotated[
+    str,
+    Field(
+        description="issue at-uri (at://did/sh.tangled.repo.issue/rkey) or bare rkey"
+    ),
+]
+Limit = Annotated[int, Field(ge=1, le=100)]
 
-# resources - read-only operations
-@tangled_mcp.resource("tangled://status")
-def tangled_status() -> dict[str, str | bool]:
-    """check the status of the tangled connection"""
-    client = _tangled._get_authenticated_client()
 
-    # verify can get tangled service token
-    try:
-        _tangled.get_service_token()
-        can_access_tangled = True
-    except Exception:
-        can_access_tangled = False
-
-    if not client.me:
-        raise RuntimeError("client not authenticated")
-
+def _issue_view(item: dict[str, Any]) -> dict[str, Any]:
+    value = item.get("value") or {}
     return {
-        "handle": client.me.handle,
-        "did": client.me.did,
-        "pds_authenticated": True,
-        "tangled_accessible": can_access_tangled,
+        "uri": item["uri"],
+        "title": value.get("title"),
+        "body": value.get("body"),
+        "state": item.get("state"),
+        "comment_count": item.get("commentCount"),
+        "created_at": value.get("createdAt"),
+        "author": item["uri"].removeprefix("at://").split("/")[0],
     }
 
 
-# tools - actions that query or modify state
-@tangled_mcp.tool
-def list_repo_branches(
-    repo: Annotated[
-        str,
-        Field(
-            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
-        ),
-    ],
-    limit: Annotated[
-        int, Field(ge=1, le=100, description="maximum number of branches to return")
-    ] = 50,
-) -> ListBranchesResult:
-    """list branches for a repository
+def _pull_view(item: dict[str, Any]) -> dict[str, Any]:
+    value = item.get("value") or {}
+    target, source = value.get("target") or {}, value.get("source") or {}
+    return {
+        "uri": item["uri"],
+        "title": value.get("title"),
+        "state": item.get("status") or item.get("state"),
+        "target_branch": target.get("branch"),
+        "source_branch": source.get("branch"),
+        "created_at": value.get("createdAt"),
+        "author": item["uri"].removeprefix("at://").split("/")[0],
+    }
 
-    Args:
-        repo: repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')
-        limit: maximum number of branches to return (1-100)
 
-    Returns:
-        list of branches
-    """
-    # resolve owner/repo to (knot, did/repo)
-    knot, repo_id = _tangled.resolve_repo_identifier(repo)
-    response = _tangled.list_branches(knot, repo_id, limit, cursor=None)
+async def _issue_uri(issue: str) -> str:
+    if issue.startswith("at://"):
+        return issue
+    if not settings.tangled_handle:
+        raise ValueError("bare rkey requires TANGLED_HANDLE; pass a full at-uri")
+    did = await bobbin.resolve_handle(settings.tangled_handle)
+    return f"at://{did}/{records.ISSUE}/{issue}"
 
-    return ListBranchesResult.from_api_response(response)
+
+# --- discovery ---------------------------------------------------------------
 
 
 @tangled_mcp.tool
-def create_repo_issue(
-    repo: Annotated[
-        str,
-        Field(
-            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
-        ),
-    ],
+async def search(
+    query: Annotated[str, Field(description="full-text search query")],
+    limit: Limit = 20,
+) -> list[dict[str, Any]]:
+    """search tangled (repos, issues, pulls, strings) via full-text index"""
+    body = await bobbin.query("sh.tangled.search.query", q=query, limit=limit)
+    return [_search_hit(hit) for hit in body.get("hits") or []]
+
+
+def _search_hit(hit: dict[str, Any]) -> dict[str, Any]:
+    value = hit.get("value") or {}
+    rkey = hit["uri"].rsplit("/", 1)[-1]
+    title = value.get("name") or value.get("title")
+    if not title and hit.get("nsid") == "sh.tangled.repo":
+        title = rkey  # new-style repo records carry their name in the rkey
+    snippet = value.get("description") or value.get("body") or value.get("contents")
+    return {
+        "uri": hit["uri"],
+        "type": hit.get("nsid"),
+        "title": title,
+        "snippet": (snippet or "")[:200] or None,
+    }
+
+
+@tangled_mcp.tool
+async def get_record(
+    uri: Annotated[str, Field(description="at-uri of any public atproto record")],
+) -> dict[str, Any]:
+    """fetch the full record behind any at-uri (e.g. a string/paste, comment,
+    or anything surfaced by search) directly from its owner's PDS"""
+    body = await bobbin.get_record(uri)
+    return body.get("value") or {}
+
+
+@tangled_mcp.tool
+async def list_repos(
+    owner: Annotated[str, Field(description="handle or DID")],
+    limit: Limit = 50,
+) -> list[dict[str, Any]]:
+    """list repositories owned by a user"""
+    did = await bobbin.resolve_handle(owner.lstrip("@"))
+    body = await bobbin.query("sh.tangled.repo.listRepos", subject=did, limit=limit)
+    out = []
+    for item in body.get("items") or []:
+        value = item.get("value") or {}
+        name = value.get("name") or item["uri"].rsplit("/", 1)[-1]
+        out.append(
+            {
+                "name": name,
+                "uri": item["uri"],
+                "knot": value.get("knot"),
+                "description": value.get("description"),
+                "url": f"{APPVIEW_URL}/@{owner.lstrip('@')}/{name}",
+            }
+        )
+    return out
+
+
+@tangled_mcp.tool
+async def get_repo(repo: RepoParam) -> dict[str, Any]:
+    """get repository metadata: knot, default branch, languages, labels"""
+    r = await bobbin.resolve_repo(repo)
+    default_branch = await bobbin.query("sh.tangled.repo.getDefaultBranch", repo=r.uri)
+    languages = await bobbin.query("sh.tangled.repo.languages", repo=r.uri)
+    return {
+        "name": r.name,
+        "uri": r.uri,
+        "repo_did": r.repo_did,
+        "knot": r.knot,
+        "description": r.description,
+        "default_branch": default_branch.get("name"),
+        "languages": {
+            lang["name"]: lang["percentage"]
+            for lang in languages.get("languages") or []
+        },
+        "labels": [uri.rsplit("/", 1)[-1] for uri in r.labels],
+    }
+
+
+# --- git reads ---------------------------------------------------------------
+
+
+@tangled_mcp.tool
+async def list_branches(repo: RepoParam, limit: Limit = 50) -> list[dict[str, Any]]:
+    """list branches with their head commits"""
+    r = await bobbin.resolve_repo(repo)
+    body = await bobbin.query("sh.tangled.repo.branches", repo=r.uri, limit=limit)
+    return [
+        {
+            "name": b["reference"]["name"],
+            "sha": b["reference"]["hash"],
+            "message": ((b.get("commit") or {}).get("Message") or "").split("\n")[0],
+        }
+        for b in body.get("branches") or []
+    ]
+
+
+@tangled_mcp.tool
+async def list_tags(repo: RepoParam, limit: Limit = 50) -> list[dict[str, Any]]:
+    """list tags"""
+    r = await bobbin.resolve_repo(repo)
+    body = await bobbin.query("sh.tangled.repo.tags", repo=r.uri, limit=limit)
+    return [
+        {"name": t.get("name"), "sha": t.get("hash"), "message": t.get("message")}
+        for t in body.get("tags") or []
+    ]
+
+
+@tangled_mcp.tool
+async def list_files(
+    repo: RepoParam,
+    path: Annotated[
+        str | None, Field(description="directory path, root if omitted")
+    ] = None,
+    ref: Annotated[str | None, Field(description="branch, tag, or sha")] = None,
+) -> list[dict[str, Any]]:
+    """list files in a repository directory"""
+    r = await bobbin.resolve_repo(repo)
+    body = await bobbin.query("sh.tangled.repo.tree", repo=r.uri, path=path, ref=ref)
+    return [
+        {
+            "name": f["name"],
+            "is_dir": f.get("mode", "").startswith("004"),
+            "size": f.get("size"),
+        }
+        for f in body.get("files") or []
+    ]
+
+
+@tangled_mcp.tool
+async def read_file(
+    repo: RepoParam,
+    path: Annotated[str, Field(description="file path within the repo")],
+    ref: Annotated[str | None, Field(description="branch, tag, or sha")] = None,
+) -> str:
+    """read a file's contents from a repository"""
+    r = await bobbin.resolve_repo(repo)
+    body = await bobbin.query("sh.tangled.repo.blob", repo=r.uri, path=path, ref=ref)
+    return body.get("content") or ""
+
+
+@tangled_mcp.tool
+async def commit_log(
+    repo: RepoParam,
+    ref: Annotated[str | None, Field(description="branch, tag, or sha")] = None,
+    limit: Limit = 20,
+) -> list[dict[str, Any]]:
+    """list recent commits"""
+    r = await bobbin.resolve_repo(repo)
+    body = await bobbin.query("sh.tangled.repo.log", repo=r.uri, ref=ref, limit=limit)
+    return [
+        {
+            "sha": c.get("this"),
+            "message": (c.get("message") or "").split("\n")[0],
+            "author": (c.get("author") or {}).get("Name"),
+            "when": (c.get("author") or {}).get("When"),
+        }
+        for c in body.get("commits") or []
+    ]
+
+
+@tangled_mcp.tool
+async def compare(
+    repo: RepoParam,
+    rev1: Annotated[str, Field(description="base revision (branch, tag, or sha)")],
+    rev2: Annotated[str, Field(description="head revision (branch, tag, or sha)")],
+) -> dict[str, Any]:
+    """compare two revisions (diff summary)"""
+    r = await bobbin.resolve_repo(repo)
+    return await bobbin.query(
+        "sh.tangled.repo.compare", repo=r.uri, rev1=rev1, rev2=rev2
+    )
+
+
+# --- issues & pulls ----------------------------------------------------------
+
+
+@tangled_mcp.tool
+async def list_issues(
+    repo: RepoParam,
+    state: Annotated[
+        Literal["open", "closed"] | None, Field(description="filter by state")
+    ] = None,
+    limit: Limit = 20,
+) -> list[dict[str, Any]]:
+    """list issues on a repository"""
+    r = await bobbin.resolve_repo(repo)
+    if not r.repo_did:
+        raise ValueError(f"repo '{repo}' has no repoDid; issues unavailable")
+    body = await bobbin.query(
+        "sh.tangled.repo.listIssues", subject=r.repo_did, state=state, limit=limit
+    )
+    return [_issue_view(item) for item in body.get("items") or []]
+
+
+@tangled_mcp.tool
+async def get_issue(issue: IssueParam) -> dict[str, Any]:
+    """get a single issue"""
+    uri = await _issue_uri(issue)
+    body = await bobbin.query("sh.tangled.repo.getIssue", issue=uri)
+    return _issue_view(body)
+
+
+@tangled_mcp.tool
+async def list_pulls(
+    repo: RepoParam,
+    status: Annotated[
+        Literal["open", "closed", "merged"] | None,
+        Field(description="filter by status"),
+    ] = None,
+    limit: Limit = 20,
+) -> list[dict[str, Any]]:
+    """list pull requests on a repository"""
+    r = await bobbin.resolve_repo(repo)
+    if not r.repo_did:
+        raise ValueError(f"repo '{repo}' has no repoDid; pulls unavailable")
+    body = await bobbin.query(
+        "sh.tangled.repo.listPulls", subject=r.repo_did, status=status, limit=limit
+    )
+    return [_pull_view(item) for item in body.get("items") or []]
+
+
+@tangled_mcp.tool
+async def list_pipelines(repo: RepoParam, limit: Limit = 10) -> list[dict[str, Any]]:
+    """list CI pipelines for a repository"""
+    r = await bobbin.resolve_repo(repo)
+    if not r.repo_did:
+        raise ValueError(f"repo '{repo}' has no repoDid; pipelines unavailable")
+    body = await bobbin.query(
+        "sh.tangled.pipeline.listPipelines", subject=r.repo_did, limit=limit
+    )
+    return body.get("items") or []
+
+
+# --- writes (require TANGLED_HANDLE / TANGLED_PASSWORD) -----------------------
+
+
+@tangled_mcp.tool
+async def create_issue(
+    repo: RepoParam,
     title: Annotated[str, Field(description="issue title")],
-    body: Annotated[str | None, Field(description="issue body/description")] = None,
+    body: Annotated[str | None, Field(description="issue body (markdown)")] = None,
     labels: Annotated[
         list[str] | None,
-        Field(
-            description="optional list of label names (e.g., ['good-first-issue', 'bug']) "
-            "to apply to the issue"
-        ),
+        Field(description="label names from the repo's label set (see get_repo)"),
     ] = None,
-) -> CreateIssueResult:
-    """create an issue on a repository
+) -> dict[str, str]:
+    """create an issue on a repository"""
+    r = await bobbin.resolve_repo(repo)
+    if not r.repo_did:
+        raise ValueError(f"repo '{repo}' has no repoDid; cannot create issues")
+    label_uris = _resolve_labels(labels, r.labels) if labels else []
 
-    Args:
-        repo: repository identifier in 'owner/repo' format
-        title: issue title
-        body: optional issue body/description
-        labels: optional list of label names to apply
-
-    Returns:
-        CreateIssueResult with url (clickable link) and issue_id
-    """
-    # resolve owner/repo to (knot, did/repo)
-    knot, repo_id = _tangled.resolve_repo_identifier(repo)
-    # create_issue doesn't need knot (uses atproto putRecord, not XRPC)
-    response = _tangled.create_issue(repo_id, title, body, labels)
-
-    return CreateIssueResult(repo=repo, id=response["issueId"])
+    session = await records.login()
+    try:
+        rkey = records.tid()
+        record: dict[str, Any] = {
+            "$type": records.ISSUE,
+            "repo": r.repo_did,
+            "title": title,
+            "createdAt": records.now(),
+        }
+        if body:
+            record["body"] = body
+        result = await session.put_record(records.ISSUE, rkey, record)
+        if label_uris:
+            await _put_label_op(session, result["uri"], add=label_uris)
+        return {
+            "uri": result["uri"],
+            "url": f"{APPVIEW_URL}/{repo.lstrip('@')}/issues/{rkey}",
+        }
+    finally:
+        await session.client.aclose()
 
 
 @tangled_mcp.tool
-def update_repo_issue(
-    repo: Annotated[
-        str,
-        Field(
-            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
-        ),
-    ],
-    issue_id: Annotated[int, Field(description="issue number (e.g., 1, 2, 3...)")],
-    title: Annotated[str | None, Field(description="new issue title")] = None,
-    body: Annotated[str | None, Field(description="new issue body/description")] = None,
-    labels: Annotated[
-        list[str] | None,
-        Field(
-            description="list of label names to SET (replaces all existing labels). "
-            "use empty list [] to remove all labels"
-        ),
+async def update_issue(
+    issue: IssueParam,
+    title: Annotated[
+        str | None, Field(description="new title (unchanged if omitted)")
     ] = None,
-) -> UpdateIssueResult:
-    """update an existing issue on a repository
-
-    Args:
-        repo: repository identifier in 'owner/repo' format
-        issue_id: issue number to update
-        title: optional new title (if None, keeps existing)
-        body: optional new body (if None, keeps existing)
-        labels: optional list of label names to SET (replaces existing)
-
-    Returns:
-        UpdateIssueResult with url (clickable link) and issue_id
-    """
-    # resolve owner/repo to (knot, did/repo)
-    knot, repo_id = _tangled.resolve_repo_identifier(repo)
-    # update_issue doesn't need knot (uses atproto putRecord, not XRPC)
-    _tangled.update_issue(repo_id, issue_id, title, body, labels)
-
-    return UpdateIssueResult(repo=repo, id=issue_id)
-
-
-@tangled_mcp.tool
-def delete_repo_issue(
-    repo: Annotated[
-        str,
-        Field(
-            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
-        ),
-    ],
-    issue_id: Annotated[
-        int, Field(description="issue number to delete (e.g., 1, 2, 3...)")
-    ],
-) -> DeleteIssueResult:
-    """delete an issue from a repository
-
-    Args:
-        repo: repository identifier in 'owner/repo' format
-        issue_id: issue number to delete
-
-    Returns:
-        DeleteIssueResult with issue_id of deleted issue
-    """
-    # resolve owner/repo to (knot, did/repo)
-    _, repo_id = _tangled.resolve_repo_identifier(repo)
-    # delete_issue doesn't need knot (uses atproto deleteRecord, not XRPC)
-    _tangled.delete_issue(repo_id, issue_id)
-
-    return DeleteIssueResult(id=issue_id)
+    body: Annotated[
+        str | None, Field(description="new body (unchanged if omitted)")
+    ] = None,
+) -> dict[str, str]:
+    """update an issue you authored"""
+    uri = await _issue_uri(issue)
+    rkey = uri.rsplit("/", 1)[-1]
+    session = await records.login()
+    try:
+        existing = await session.get_record(records.ISSUE, rkey)
+        record = existing["value"]
+        if title is not None:
+            record["title"] = title
+        if body is not None:
+            record["body"] = body
+        result = await session.put_record(records.ISSUE, rkey, record)
+        return {"uri": result["uri"]}
+    finally:
+        await session.client.aclose()
 
 
 @tangled_mcp.tool
-def list_repo_issues(
-    repo: Annotated[
-        str,
-        Field(
-            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
-        ),
-    ],
-    limit: Annotated[
-        int, Field(ge=1, le=100, description="maximum number of issues to return")
-    ] = 20,
-) -> ListIssuesResult:
-    """list issues for a repository
-
-    Args:
-        repo: repository identifier in 'owner/repo' format
-        limit: maximum number of issues to return (1-100)
-
-    Returns:
-        ListIssuesResult with list of issues
-    """
-    # resolve owner/repo to (knot, did/repo)
-    _, repo_id = _tangled.resolve_repo_identifier(repo)
-    # list_repo_issues doesn't need knot (queries atproto records, not XRPC)
-    response = _tangled.list_repo_issues(repo_id, limit, cursor=None)
-
-    return ListIssuesResult.from_api_response(response)
+async def set_issue_state(
+    issue: IssueParam,
+    state: Annotated[Literal["open", "closed"], Field(description="new state")],
+) -> dict[str, str]:
+    """close or reopen an issue"""
+    uri = await _issue_uri(issue)
+    session = await records.login()
+    try:
+        record = {
+            "$type": records.ISSUE_STATE,
+            "issue": uri,
+            "state": records.STATE_OPEN if state == "open" else records.STATE_CLOSED,
+            "createdAt": records.now(),
+        }
+        result = await session.put_record(records.ISSUE_STATE, records.tid(), record)
+        return {"uri": result["uri"], "state": state}
+    finally:
+        await session.client.aclose()
 
 
 @tangled_mcp.tool
-def list_repo_labels(
-    repo: Annotated[
-        str,
-        Field(
-            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
-        ),
-    ],
-) -> list[str]:
-    """list available labels for a repository
-
-    Args:
-        repo: repository identifier in 'owner/repo' format
-
-    Returns:
-        list of available label names for the repository
-    """
-    # resolve owner/repo to (knot, did/repo)
-    _, repo_id = _tangled.resolve_repo_identifier(repo)
-    # list_repo_labels doesn't need knot (queries atproto records, not XRPC)
-    return _tangled.list_repo_labels(repo_id)
+async def comment_on_issue(
+    issue: IssueParam,
+    body: Annotated[str, Field(description="comment body (markdown)")],
+) -> dict[str, str]:
+    """comment on an issue"""
+    uri = await _issue_uri(issue)
+    session = await records.login()
+    try:
+        record = {
+            "$type": records.ISSUE_COMMENT,
+            "issue": uri,
+            "body": body,
+            "createdAt": records.now(),
+        }
+        result = await session.put_record(records.ISSUE_COMMENT, records.tid(), record)
+        return {"uri": result["uri"]}
+    finally:
+        await session.client.aclose()
 
 
 @tangled_mcp.tool
-def list_repo_pulls(
-    repo: Annotated[
-        str,
-        Field(
-            description="repository identifier in 'owner/repo' format (e.g., 'zzstoatzz/tangled-mcp')"
-        ),
-    ],
-    limit: Annotated[
-        int, Field(ge=1, le=100, description="maximum number of pulls to return")
-    ] = 20,
-) -> ListPullsResult:
-    """list pull requests created by the authenticated user for a repository
+async def delete_issue(issue: IssueParam) -> dict[str, str]:
+    """delete an issue you authored"""
+    uri = await _issue_uri(issue)
+    session = await records.login()
+    try:
+        await session.delete_record(records.ISSUE, uri.rsplit("/", 1)[-1])
+        return {"deleted": uri}
+    finally:
+        await session.client.aclose()
 
-    note: only returns PRs that the authenticated user created (tangled stores
-    PRs in the creator's repo, so we can only see our own PRs).
 
-    Args:
-        repo: repository identifier in 'owner/repo' format
-        limit: maximum number of pulls to return (1-100)
+def _resolve_labels(names: list[str], repo_label_uris: list[str]) -> list[str]:
+    """map label names to the repo's subscribed label definition at-uris"""
+    by_name = {uri.rsplit("/", 1)[-1].lower(): uri for uri in repo_label_uris}
+    missing = [n for n in names if n.lower() not in by_name]
+    if missing:
+        raise ValueError(f"invalid labels: {missing}; available: {sorted(by_name)}")
+    return [by_name[n.lower()] for n in names]
 
-    Returns:
-        ListPullsResult with list of pull requests
-    """
-    # resolve owner/repo to (knot, did/repo)
-    _, repo_id = _tangled.resolve_repo_identifier(repo)
-    # list_repo_pulls doesn't need knot (queries atproto records, not XRPC)
-    response = _tangled.list_repo_pulls(repo_id, limit)
 
-    return ListPullsResult.from_api_response(response["pulls"])
+async def _put_label_op(
+    session: records.Session,
+    subject: str,
+    add: list[str] | None = None,
+    delete: list[str] | None = None,
+) -> None:
+    record = {
+        "$type": records.LABEL_OP,
+        "subject": subject,
+        "add": [{"key": uri, "value": ""} for uri in add or []],
+        "delete": [{"key": uri, "value": ""} for uri in delete or []],
+        "performedAt": records.now(),
+    }
+    await session.put_record(records.LABEL_OP, records.tid(), record)

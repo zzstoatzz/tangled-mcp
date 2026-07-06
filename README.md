@@ -2,6 +2,8 @@
 
 MCP server for [Tangled](https://tangled.org) - a git collaboration platform built on AT Protocol.
 
+reads go through [bobbin](https://docs.tangled.org/bobbin.html), tangled's public XRPC API (`api.tangled.org`) — **no credentials needed**. writes (issues, comments, labels) are atproto records put directly on your PDS and require an app password.
+
 > **note**: this repository is mirrored to [GitHub](https://github.com/zzstoatzz/tangled-mcp) for deployment via [FastMCP Cloud](https://fastmcp.cloud).
 
 ## installation
@@ -17,7 +19,7 @@ just setup
 
 ## configuration
 
-create `.env` file:
+credentials are optional — only write tools need them. create `.env`:
 
 ```bash
 TANGLED_HANDLE=your.handle
@@ -34,10 +36,10 @@ TANGLED_PDS_URL=
 ### claude code
 
 ```bash
-# basic setup
+# read-only (no credentials)
 claude mcp add tangled -- uvx tangled-mcp
 
-# with credentials
+# with write access
 claude mcp add tangled \
   -e TANGLED_HANDLE=your.handle \
   -e TANGLED_PASSWORD=your-app-password \
@@ -77,7 +79,7 @@ codex mcp add tangled \
 for clients that support MCP server configuration, use:
 - **command**: `uvx`
 - **args**: `["tangled-mcp"]`
-- **environment variables**: `TANGLED_HANDLE`, `TANGLED_PASSWORD`, and optionally `TANGLED_PDS_URL`
+- **environment variables** (optional, for writes): `TANGLED_HANDLE`, `TANGLED_PASSWORD`, `TANGLED_PDS_URL`
 
 </details>
 
@@ -87,26 +89,35 @@ for clients that support MCP server configuration, use:
 uv run tangled-mcp
 ```
 
-## resources
-
-- `tangled://status` - connection status (PDS auth + tangled accessibility)
-
 ## tools
 
-all tools accept repositories in `owner/repo` format (e.g., `zzstoatzz/tangled-mcp`). handles (with or without `@` prefix) and DIDs are both supported for the owner.
+repositories are `owner/repo` (e.g. `zzstoatzz.io/tangled-mcp`); handles (with or without `@`) and DIDs both work for the owner. issues are identified by at-uri.
 
-### repositories
-- `list_repo_branches(repo, limit, cursor)` - list branches for a repository
+### discovery (no auth)
+- `search(query, limit)` - full-text search across repos, issues, and strings
+- `list_repos(owner, limit)` - list a user's repositories
+- `get_repo(repo)` - metadata: knot, default branch, languages, labels
+- `get_record(uri)` - fetch the full record behind any at-uri (strings/pastes, comments, ...)
 
-### issues
-- `create_repo_issue(repo, title, body, labels)` - create an issue with optional labels
-- `update_repo_issue(repo, issue_id, title, body, labels)` - update an issue's title, body, and/or labels
-- `delete_repo_issue(repo, issue_id)` - delete an issue
-- `list_repo_issues(repo, limit)` - list issues for a repository
-- `list_repo_labels(repo)` - list available labels for a repository
+### git (no auth)
+- `list_branches(repo, limit)` / `list_tags(repo, limit)`
+- `list_files(repo, path, ref)` - browse the tree
+- `read_file(repo, path, ref)` - file contents
+- `commit_log(repo, ref, limit)` - recent commits
+- `compare(repo, rev1, rev2)` - diff two revisions
 
-### pull requests
-- `list_repo_pulls(repo, limit)` - list PRs targeting a repository (only shows PRs you created)
+### issues & pulls (no auth)
+- `list_issues(repo, state, limit)` - filterable by open/closed
+- `get_issue(issue)`
+- `list_pulls(repo, status, limit)` - filterable by open/closed/merged
+- `list_pipelines(repo, limit)` - CI pipeline runs
+
+### writes (require credentials)
+- `create_issue(repo, title, body, labels)`
+- `update_issue(issue, title, body)`
+- `set_issue_state(issue, state)` - close/reopen
+- `comment_on_issue(issue, body)`
+- `delete_issue(issue)`
 
 ## development
 
@@ -114,6 +125,8 @@ all tools accept repositories in `owner/repo` format (e.g., `zzstoatzz/tangled-m
 just test   # run tests
 just check  # run pre-commit checks
 ```
+
+see [docs/bobbin-api.md](docs/bobbin-api.md) for notes on tangled's public API.
 
 ---
 

@@ -6,12 +6,9 @@ readme = "README.md"
 authors = [{ name = "nate", email = "zzstoatzz@protonmail.com" }]
 requires-python = ">=3.10"
 dependencies = [
-    "atproto",
     "fastmcp>=2.12.4",
     "httpx>=0.28.1",
     "pydantic-settings>=2.11.0",
-    "python-dotenv>=1.1.1",
-    "websockets>=15.0.1",
 ]
 
 [project.scripts]
@@ -30,12 +27,6 @@ style = "pep440"
 bump = true
 fallback-version = "0.0.0"
 
-[tool.hatch.metadata]
-allow-direct-references = true
-
-[tool.uv.sources]
-atproto = { git = "https://github.com/MarshalX/atproto.git", rev = "refs/pull/605/head" }
-
 [dependency-groups]
 dev = [
     "pre-commit>=4.3.0",
@@ -52,12 +43,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-filterwarnings = [
-    # upstream atproto issue: https://github.com/MarshalX/atproto/issues/625
-    "ignore::pydantic.warnings.UnsupportedFieldAttributeWarning",
-    # upstream: atproto SDK uses deprecated httpx API
-    "ignore::DeprecationWarning:httpx",
-]
 
 [tool.ty.src]
 include = ["src", "tests"]
