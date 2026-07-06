@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+from fastmcp.server.dependencies import get_http_headers
 
 from tangled_mcp.bobbin import resolve_handle
 from tangled_mcp.settings import PLC_URL, settings
@@ -87,15 +88,47 @@ class Session:
         return f"at://{self.did}/{collection}/{rkey}"
 
 
+@dataclass
+class Credentials:
+    handle: str | None
+    password: str | None
+    pds_url: str | None
+
+
+def resolve_credentials() -> Credentials:
+    """per-request headers win over env, and are never mixed with it.
+
+    multi-tenant deployments (e.g. FastMCP Cloud) can carry credentials per
+    request via x-tangled-handle / x-tangled-password / x-tangled-pds-url;
+    a header identity must be complete on its own so one tenant's handle
+    can't pair with the server's env password.
+    """
+    headers = get_http_headers()
+    handle = headers.get("x-tangled-handle")
+    if handle:
+        return Credentials(
+            handle=handle,
+            password=headers.get("x-tangled-password"),
+            pds_url=headers.get("x-tangled-pds-url"),
+        )
+    return Credentials(
+        handle=settings.tangled_handle,
+        password=settings.tangled_password,
+        pds_url=settings.tangled_pds_url,
+    )
+
+
 async def login() -> Session:
     """authenticate against the user's PDS with app-password credentials"""
-    if not settings.tangled_handle or not settings.tangled_password:
+    creds = resolve_credentials()
+    if not creds.handle or not creds.password:
         raise RuntimeError(
-            "write tools require TANGLED_HANDLE and TANGLED_PASSWORD to be set"
+            "write tools require credentials: x-tangled-handle/x-tangled-password "
+            "headers or TANGLED_HANDLE/TANGLED_PASSWORD env"
         )
-    did = await resolve_handle(settings.tangled_handle)
+    did = await resolve_handle(creds.handle)
 
-    pds = settings.tangled_pds_url
+    pds = creds.pds_url
     if not pds:
         async with httpx.AsyncClient(timeout=15.0) as client:
             doc = (await client.get(f"{PLC_URL}/{did}")).json()
@@ -108,11 +141,11 @@ async def login() -> Session:
     client = httpx.AsyncClient(timeout=15.0)
     response = await client.post(
         f"{pds}/xrpc/com.atproto.server.createSession",
-        json={"identifier": settings.tangled_handle, "password": settings.tangled_password},
+        json={"identifier": creds.handle, "password": creds.password},
     )
     if not response.is_success:
         await client.aclose()
-        raise RuntimeError(f"auth failed for '{settings.tangled_handle}'")
+        raise RuntimeError(f"auth failed for '{creds.handle}'")
     body = response.json()
     client.headers["Authorization"] = f"Bearer {body['accessJwt']}"
     return Session(client=client, did=body["did"], pds=pds)

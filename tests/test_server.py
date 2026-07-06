@@ -194,3 +194,38 @@ def _const(value: str):
         return value
 
     return fake
+
+
+def test_resolve_credentials_headers_win_and_never_mix(monkeypatch: Any):
+    from tangled_mcp import records
+    from tangled_mcp.settings import settings
+
+    monkeypatch.setattr(settings, "tangled_handle", "env.handle")
+    monkeypatch.setattr(settings, "tangled_password", "env-pass")
+    monkeypatch.setattr(settings, "tangled_pds_url", "https://env.pds")
+
+    # no headers → env credentials
+    monkeypatch.setattr(records, "get_http_headers", lambda: {})
+    creds = records.resolve_credentials()
+    assert (creds.handle, creds.password) == ("env.handle", "env-pass")
+
+    # header identity is used whole — env password must NOT fill the gap
+    monkeypatch.setattr(
+        records, "get_http_headers", lambda: {"x-tangled-handle": "phi.handle"}
+    )
+    creds = records.resolve_credentials()
+    assert creds.handle == "phi.handle"
+    assert creds.password is None
+    assert creds.pds_url is None
+
+    # complete header identity
+    monkeypatch.setattr(
+        records,
+        "get_http_headers",
+        lambda: {
+            "x-tangled-handle": "phi.handle",
+            "x-tangled-password": "phi-pass",
+        },
+    )
+    creds = records.resolve_credentials()
+    assert (creds.handle, creds.password) == ("phi.handle", "phi-pass")

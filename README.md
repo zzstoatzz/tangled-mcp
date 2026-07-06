@@ -19,7 +19,7 @@ just setup
 
 ## configuration
 
-credentials are optional — only write tools need them. create `.env`:
+credentials are optional — only write tools need them. hosted/multi-tenant deployments can send them per request via `x-tangled-handle` / `x-tangled-password` (/ `x-tangled-pds-url`) headers, which take precedence over env. for local use, create `.env`:
 
 ```bash
 TANGLED_HANDLE=your.handle

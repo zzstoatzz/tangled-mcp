@@ -10,7 +10,7 @@ from fastmcp import FastMCP
 from pydantic import Field
 
 from tangled_mcp import bobbin, records
-from tangled_mcp.settings import APPVIEW_URL, settings
+from tangled_mcp.settings import APPVIEW_URL
 
 tangled_mcp = FastMCP("tangled MCP server")
 
@@ -60,9 +60,10 @@ def _pull_view(item: dict[str, Any]) -> dict[str, Any]:
 async def _issue_uri(issue: str) -> str:
     if issue.startswith("at://"):
         return issue
-    if not settings.tangled_handle:
-        raise ValueError("bare rkey requires TANGLED_HANDLE; pass a full at-uri")
-    did = await bobbin.resolve_handle(settings.tangled_handle)
+    handle = records.resolve_credentials().handle
+    if not handle:
+        raise ValueError("bare rkey requires credentials; pass a full at-uri")
+    did = await bobbin.resolve_handle(handle)
     return f"at://{did}/{records.ISSUE}/{issue}"
 
 
