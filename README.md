@@ -133,6 +133,7 @@ repositories are `owner/repo` (e.g. `zzstoatzz.io/tangled-mcp`); handles (with o
 - `create_issue(repo, title, body, labels)`
 - `update_issue(issue, title, body)`
 - `set_issue_state(issue, state)` - close/reopen
+- `set_pull_state(pull, state)` - close/reopen a PR
 - `comment_on_issue(issue, body)`
 - `delete_issue(issue)`
 

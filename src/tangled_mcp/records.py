@@ -18,6 +18,10 @@ from tangled_mcp.settings import PLC_URL, settings
 
 ISSUE = "sh.tangled.repo.issue"
 PULL = "sh.tangled.repo.pull"
+PULL_STATUS = "sh.tangled.repo.pull.status"
+
+PULL_OPEN = "sh.tangled.repo.pull.status.open"
+PULL_CLOSED = "sh.tangled.repo.pull.status.closed"
 ISSUE_STATE = "sh.tangled.repo.issue.state"
 ISSUE_COMMENT = "sh.tangled.repo.issue.comment"
 LABEL_OP = "sh.tangled.label.op"

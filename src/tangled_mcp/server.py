@@ -453,6 +453,29 @@ async def set_issue_state(
 
 
 @tangled_mcp.tool
+async def set_pull_state(
+    pull: Annotated[
+        str,
+        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
+    ],
+    state: Annotated[Literal["open", "closed"], Field(description="new state")],
+) -> dict[str, str]:
+    """close or reopen a pull request you authored"""
+    session = await records.login()
+    try:
+        record = {
+            "$type": records.PULL_STATUS,
+            "pull": pull,
+            "status": records.PULL_OPEN if state == "open" else records.PULL_CLOSED,
+            "createdAt": records.now(),
+        }
+        result = await session.put_record(records.PULL_STATUS, records.tid(), record)
+        return {"uri": result["uri"], "state": state}
+    finally:
+        await session.client.aclose()
+
+
+@tangled_mcp.tool
 async def comment_on_issue(
     issue: IssueParam,
     body: Annotated[str, Field(description="comment body (markdown)")],
