@@ -7,7 +7,9 @@
 ## deployment
 - **primary**: https://github.com/zzstoatzz/tangled-mcp (FastMCP Cloud)
 - **mirror**: tangled.sh:zzstoatzz.io/tangled-mcp (dogfooding)
-- `git push origin main` → both remotes
+- `origin` is the tangled remote only — push the GitHub mirror separately
+  (`git push https://github.com/zzstoatzz/tangled-mcp.git main`) to trigger
+  the FastMCP Cloud deploy
 
 ## architecture (v2, bobbin era)
 - **all reads** go through bobbin, tangled's public read-only XRPC API at
