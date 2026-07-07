@@ -16,7 +16,6 @@ class Settings(BaseSettings):
 
     tangled_handle: str | None = Field(default=None)
     tangled_password: str | None = Field(default=None)
-    tangled_pds_url: str | None = Field(default=None)
 
 
 settings = Settings()

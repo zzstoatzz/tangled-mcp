@@ -202,8 +202,6 @@ def test_resolve_credentials_headers_win_and_never_mix(monkeypatch: Any):
 
     monkeypatch.setattr(settings, "tangled_handle", "env.handle")
     monkeypatch.setattr(settings, "tangled_password", "env-pass")
-    monkeypatch.setattr(settings, "tangled_pds_url", "https://env.pds")
-
     # no headers → env credentials
     monkeypatch.setattr(records, "get_http_headers", lambda: {})
     creds = records.resolve_credentials()
@@ -216,7 +214,6 @@ def test_resolve_credentials_headers_win_and_never_mix(monkeypatch: Any):
     creds = records.resolve_credentials()
     assert creds.handle == "phi.handle"
     assert creds.password is None
-    assert creds.pds_url is None
 
     # complete header identity
     monkeypatch.setattr(
@@ -229,3 +226,38 @@ def test_resolve_credentials_headers_win_and_never_mix(monkeypatch: Any):
     )
     creds = records.resolve_credentials()
     assert (creds.handle, creds.password) == ("phi.handle", "phi-pass")
+
+
+async def test_discover_pds_routes_by_did_method(monkeypatch: Any):
+    from tangled_mcp import records
+
+    requested: list[str] = []
+
+    class FakeResponse:
+        def json(self) -> dict[str, Any]:
+            return {
+                "service": [
+                    {
+                        "type": "AtprotoPersonalDataServer",
+                        "serviceEndpoint": "https://pds.example",
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, **kwargs: Any) -> None: ...
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None: ...
+        async def get(self, url: str) -> FakeResponse:
+            requested.append(url)
+            return FakeResponse()
+
+    monkeypatch.setattr(records.httpx, "AsyncClient", FakeClient)
+
+    assert await records.discover_pds("did:plc:abc123") == "https://pds.example"
+    assert requested[-1] == "https://plc.directory/did:plc:abc123"
+
+    assert await records.discover_pds("did:web:pds.example") == "https://pds.example"
+    assert requested[-1] == "https://pds.example/.well-known/did.json"

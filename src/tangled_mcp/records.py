@@ -92,16 +92,15 @@ class Session:
 class Credentials:
     handle: str | None
     password: str | None
-    pds_url: str | None
 
 
 def resolve_credentials() -> Credentials:
     """per-request headers win over env, and are never mixed with it.
 
     multi-tenant deployments (e.g. FastMCP Cloud) can carry credentials per
-    request via x-tangled-handle / x-tangled-password / x-tangled-pds-url;
-    a header identity must be complete on its own so one tenant's handle
-    can't pair with the server's env password.
+    request via x-tangled-handle / x-tangled-password; a header identity must
+    be complete on its own so one tenant's handle can't pair with the
+    server's env password.
     """
     headers = get_http_headers()
     handle = headers.get("x-tangled-handle")
@@ -109,13 +108,29 @@ def resolve_credentials() -> Credentials:
         return Credentials(
             handle=handle,
             password=headers.get("x-tangled-password"),
-            pds_url=headers.get("x-tangled-pds-url"),
         )
     return Credentials(
         handle=settings.tangled_handle,
         password=settings.tangled_password,
-        pds_url=settings.tangled_pds_url,
     )
+
+
+async def discover_pds(did: str) -> str:
+    """resolve a DID document and return its PDS endpoint."""
+    if did.startswith("did:web:"):
+        doc_url = f"https://{did.removeprefix('did:web:')}/.well-known/did.json"
+    else:
+        doc_url = f"{PLC_URL}/{did}"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        doc = (await client.get(doc_url)).json()
+    try:
+        return next(
+            s["serviceEndpoint"]
+            for s in doc.get("service", [])
+            if s.get("type") == "AtprotoPersonalDataServer"
+        )
+    except StopIteration:
+        raise RuntimeError(f"no PDS endpoint in DID document for {did}") from None
 
 
 async def login() -> Session:
@@ -127,16 +142,7 @@ async def login() -> Session:
             "headers or TANGLED_HANDLE/TANGLED_PASSWORD env"
         )
     did = await resolve_handle(creds.handle)
-
-    pds = creds.pds_url
-    if not pds:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            doc = (await client.get(f"{PLC_URL}/{did}")).json()
-        pds = next(
-            s["serviceEndpoint"]
-            for s in doc.get("service", [])
-            if s.get("type") == "AtprotoPersonalDataServer"
-        )
+    pds = await discover_pds(did)
 
     client = httpx.AsyncClient(timeout=15.0)
     response = await client.post(

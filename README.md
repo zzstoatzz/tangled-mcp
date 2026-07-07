@@ -22,6 +22,8 @@ claude mcp add --transport http tangled https://nate-tangled-mcp.fastmcp.app/mcp
   --header "x-tangled-password: your-app-password"
 ```
 
+your PDS is auto-discovered from your handle — self-hosted PDS works with no extra config.
+
 ## installation
 
 ```bash
@@ -35,13 +37,11 @@ just setup
 
 ## configuration
 
-credentials are optional — only write tools need them. hosted/multi-tenant deployments can send them per request via `x-tangled-handle` / `x-tangled-password` (/ `x-tangled-pds-url`) headers, which take precedence over env. for local use, create `.env`:
+credentials are optional — only write tools need them. hosted/multi-tenant deployments can send them per request via `x-tangled-handle` / `x-tangled-password` headers, which take precedence over env. for local use, create `.env`:
 
 ```bash
 TANGLED_HANDLE=your.handle
 TANGLED_PASSWORD=your-app-password
-# optional: only needed if using custom PDS (leave blank for auto-discovery)
-TANGLED_PDS_URL=
 ```
 
 ## usage
@@ -95,7 +95,7 @@ codex mcp add tangled \
 for clients that support MCP server configuration, use:
 - **command**: `uvx`
 - **args**: `["tangled-mcp"]`
-- **environment variables** (optional, for writes): `TANGLED_HANDLE`, `TANGLED_PASSWORD`, `TANGLED_PDS_URL`
+- **environment variables** (optional, for writes): `TANGLED_HANDLE`, `TANGLED_PASSWORD`
 
 </details>
 
