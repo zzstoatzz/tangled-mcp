@@ -10,3 +10,8 @@ test:
 # run pre-commit checks
 check:
     uv run pre-commit run --all-files
+
+# push main to both remotes (tangled origin + github mirror → fastmcp cloud deploy)
+push:
+    git push origin main
+    git push https://github.com/zzstoatzz/tangled-mcp.git main
