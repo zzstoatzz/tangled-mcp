@@ -329,4 +329,4 @@ async def test_create_pull_record_shape(monkeypatch: Any):
     assert record["target"] == {"repo": "did:plc:repodid", "branch": "main"}
     assert record["rounds"][0]["patchBlob"]["ref"]["$link"] == "bafyfake"
     assert result["uri"].startswith("at://did:plc:me/sh.tangled.repo.pull/")
-    assert "/pulls/" in result["url"]
+    assert result["url"].endswith("/pulls")

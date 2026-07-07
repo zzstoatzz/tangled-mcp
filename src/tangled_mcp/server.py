@@ -341,7 +341,8 @@ async def create_issue(
             await _put_label_op(session, result["uri"], add=label_uris)
         return {
             "uri": result["uri"],
-            "url": f"{APPVIEW_URL}/{repo.lstrip('@')}/issues/{rkey}",
+            # the appview assigns sequential issue numbers we can't know here
+            "url": f"{APPVIEW_URL}/{repo.lstrip('@')}/issues",
         }
     finally:
         await session.client.aclose()
@@ -396,7 +397,8 @@ async def create_pull(
         result = await session.put_record(records.PULL, rkey, record)
         return {
             "uri": result["uri"],
-            "url": f"{APPVIEW_URL}/{repo.lstrip('@')}/pulls/{rkey}",
+            # the appview assigns sequential pull numbers we can't know here
+            "url": f"{APPVIEW_URL}/{repo.lstrip('@')}/pulls",
         }
     finally:
         await session.client.aclose()
