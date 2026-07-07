@@ -42,6 +42,7 @@ async def test_tools_registered():
         "list_issues",
         "get_issue",
         "list_pulls",
+        "get_pull",
         "list_pipelines",
         "create_issue",
         "create_pull",

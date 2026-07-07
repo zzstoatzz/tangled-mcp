@@ -296,6 +296,46 @@ async def list_pulls(
 
 
 @tangled_mcp.tool
+async def get_pull(
+    pull: Annotated[
+        str,
+        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
+    ],
+) -> dict[str, Any]:
+    """get a pull request with its current state.
+
+    state is derived from the newest sh.tangled.repo.pull.status record on
+    the author's PDS — the source of truth — so it's live even when the
+    appview/bobbin indexes lag.
+    """
+    record = await bobbin.get_record(pull)
+    value = record.get("value") or {}
+    author = pull.removeprefix("at://").split("/")[0]
+
+    statuses = [
+        s.get("value") or {}
+        for s in await bobbin.list_records(author, records.PULL_STATUS)
+        if (s.get("value") or {}).get("pull") == pull
+    ]
+    latest = max(statuses, key=lambda s: s.get("createdAt") or "", default=None)
+    state = (latest["status"].rsplit(".", 1)[-1]) if latest else "open"
+
+    target = value.get("target") or {}
+    return {
+        "uri": pull,
+        "title": value.get("title"),
+        "body": value.get("body"),
+        "state": state,
+        "state_changed_at": latest.get("createdAt") if latest else None,
+        "target_branch": target.get("branch"),
+        "target_repo": target.get("repo"),
+        "rounds": len(value.get("rounds") or []),
+        "created_at": value.get("createdAt"),
+        "author": author,
+    }
+
+
+@tangled_mcp.tool
 async def list_pipelines(repo: RepoParam, limit: Limit = 10) -> list[dict[str, Any]]:
     """list CI pipelines for a repository"""
     r = await bobbin.resolve_repo(repo)

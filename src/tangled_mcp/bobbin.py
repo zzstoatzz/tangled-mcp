@@ -63,6 +63,32 @@ async def resolve_pds(did: str) -> str:
     raise BobbinError(f"no PDS in DID document for {did}")
 
 
+async def list_records(
+    did: str, collection: str, max_pages: int = 5
+) -> list[dict[str, Any]]:
+    """page a collection straight off a repo's PDS"""
+    pds = await resolve_pds(did)
+    out: list[dict[str, Any]] = []
+    cursor: str | None = None
+    for _ in range(max_pages):
+        params: dict[str, Any] = {"repo": did, "collection": collection, "limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        response = await _client.get(
+            f"{pds}/xrpc/com.atproto.repo.listRecords", params=params
+        )
+        if not response.is_success:
+            raise BobbinError(
+                f"listRecords {collection} failed ({response.status_code})"
+            )
+        body = response.json()
+        out.extend(body.get("records") or [])
+        cursor = body.get("cursor")
+        if not cursor:
+            break
+    return out
+
+
 async def get_record(uri: str) -> dict[str, Any]:
     """fetch any public atproto record by at-uri from its owner's PDS"""
     parts = uri.removeprefix("at://").split("/")

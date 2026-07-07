@@ -126,6 +126,7 @@ repositories are `owner/repo` (e.g. `zzstoatzz.io/tangled-mcp`); handles (with o
 - `list_issues(repo, state, limit)` - filterable by open/closed
 - `get_issue(issue)`
 - `list_pulls(repo, status, limit)` - filterable by open/closed/merged
+- `get_pull(pull)` - single PR with live state (derived from PDS status records, no index lag)
 - `list_pipelines(repo, limit)` - CI pipeline runs
 
 ### writes (require credentials)
