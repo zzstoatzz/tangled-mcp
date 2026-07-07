@@ -496,15 +496,22 @@ async def set_pull_state(
         str,
         Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
     ],
-    state: Annotated[Literal["open", "closed"], Field(description="new state")],
+    state: Annotated[
+        Literal["open", "closed", "merged"], Field(description="new state")
+    ],
 ) -> dict[str, str]:
-    """close or reopen a pull request you authored"""
+    """close, reopen, or mark merged a pull request you authored"""
+    status = {
+        "open": records.PULL_OPEN,
+        "closed": records.PULL_CLOSED,
+        "merged": records.PULL_MERGED,
+    }[state]
     session = await records.login()
     try:
         record = {
             "$type": records.PULL_STATUS,
             "pull": pull,
-            "status": records.PULL_OPEN if state == "open" else records.PULL_CLOSED,
+            "status": status,
             "createdAt": records.now(),
         }
         result = await session.put_record(records.PULL_STATUS, records.tid(), record)

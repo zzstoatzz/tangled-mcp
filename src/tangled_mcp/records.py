@@ -22,6 +22,7 @@ PULL_STATUS = "sh.tangled.repo.pull.status"
 
 PULL_OPEN = "sh.tangled.repo.pull.status.open"
 PULL_CLOSED = "sh.tangled.repo.pull.status.closed"
+PULL_MERGED = "sh.tangled.repo.pull.status.merged"
 ISSUE_STATE = "sh.tangled.repo.issue.state"
 ISSUE_COMMENT = "sh.tangled.repo.issue.comment"
 LABEL_OP = "sh.tangled.label.op"
