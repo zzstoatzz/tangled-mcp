@@ -6,6 +6,22 @@ reads go through [bobbin](https://docs.tangled.org/bobbin.html), tangled's publi
 
 > **note**: this repository is mirrored to [GitHub](https://github.com/zzstoatzz/tangled-mcp) for deployment via [FastMCP Cloud](https://fastmcp.cloud).
 
+## hosted server
+
+a hosted instance runs at **`https://nate-tangled-mcp.fastmcp.app/mcp`** — no install needed:
+
+```bash
+claude mcp add --transport http tangled https://nate-tangled-mcp.fastmcp.app/mcp
+```
+
+for write access, pass credentials per request via headers:
+
+```bash
+claude mcp add --transport http tangled https://nate-tangled-mcp.fastmcp.app/mcp \
+  --header "x-tangled-handle: your.handle" \
+  --header "x-tangled-password: your-app-password"
+```
+
 ## installation
 
 ```bash
