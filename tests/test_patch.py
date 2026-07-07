@@ -37,7 +37,11 @@ def test_git_am_applies_synthesized_patch(repo: Path):
         "the works",
         "someone.example",
         [
-            ("edit.txt", "line one\nline two\nline three\n", "line one\nline 2\nline three\n"),
+            (
+                "edit.txt",
+                "line one\nline two\nline three\n",
+                "line one\nline 2\nline three\n",
+            ),
             ("fresh.txt", None, "brand new\n"),
             ("gone.txt", "delete me\n", None),
         ],

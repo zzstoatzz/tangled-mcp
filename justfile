@@ -10,3 +10,8 @@ test:
 # run pre-commit checks
 check:
     uv run pre-commit run --all-files
+
+# end-to-end pull request tests: open + verify + close real PRs on tangled
+# (needs TANGLED_HANDLE / TANGLED_PASSWORD)
+e2e:
+    uv run pytest tests/ -m e2e -v --override-ini="addopts="
