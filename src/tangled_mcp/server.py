@@ -8,9 +8,10 @@ import gzip
 from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from tangled_mcp import bobbin, records
+from tangled_mcp.patch import synthesize as synthesize_patch
 from tangled_mcp.settings import APPVIEW_URL
 
 tangled_mcp = FastMCP("tangled MCP server")
@@ -348,17 +349,32 @@ async def create_issue(
         await session.client.aclose()
 
 
+class Edit(BaseModel):
+    """desired end-state of one file. content=None deletes it."""
+
+    path: str
+    content: str | None = None
+
+
 @tangled_mcp.tool
 async def create_pull(
     repo: RepoParam,
     title: Annotated[str, Field(description="pull request title")],
     patch: Annotated[
-        str,
+        str | None,
         Field(
             description="git format-patch output (`git format-patch <base> --stdout`) "
             "containing the commits to propose"
         ),
-    ],
+    ] = None,
+    edits: Annotated[
+        list[Edit] | None,
+        Field(
+            description="alternative to `patch` for callers without a clone: "
+            "full desired content per file (content=null deletes the file); "
+            "the server diffs against the target branch and synthesizes the patch"
+        ),
+    ] = None,
     target_branch: Annotated[
         str | None,
         Field(description="branch to merge into (repo default branch if omitted)"),
@@ -369,15 +385,37 @@ async def create_pull(
 ) -> dict[str, str]:
     """open a patch-based pull request on a repository.
 
-    the patch is gzipped and uploaded as a blob on your PDS, then referenced
+    the changeset — a format-patch you provide, or one synthesized from
+    `edits` — is gzipped and uploaded as a blob on your PDS, then referenced
     from a sh.tangled.repo.pull record — no push access to the target needed.
     """
+    if (patch is None) == (edits is None):
+        raise ValueError("provide exactly one of `patch` or `edits`")
     r = await bobbin.resolve_repo(repo)
     if not r.repo_did:
         raise ValueError(f"repo '{repo}' has no repoDid; cannot create pulls")
     if not target_branch:
         default = await bobbin.query("sh.tangled.repo.getDefaultBranch", repo=r.uri)
         target_branch = default.get("name") or "main"
+
+    if edits is not None:
+        files = []
+        for e in edits:
+            try:
+                base = await bobbin.query(
+                    "sh.tangled.repo.blob", repo=r.uri, path=e.path, ref=target_branch
+                )
+                old = base.get("content") or ""
+            except bobbin.BobbinError:
+                old = None
+            if old is None and e.content is None:
+                raise ValueError(f"cannot delete '{e.path}': not in {target_branch}")
+            if old == e.content:
+                raise ValueError(f"'{e.path}' already has that content")
+            files.append((e.path, old, e.content))
+        author = records.resolve_credentials().handle or "unknown"
+        patch = synthesize_patch(title, author, files)
+    assert patch is not None
 
     session = await records.login()
     try:

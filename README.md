@@ -129,7 +129,7 @@ repositories are `owner/repo` (e.g. `zzstoatzz.io/tangled-mcp`); handles (with o
 - `list_pipelines(repo, limit)` - CI pipeline runs
 
 ### writes (require credentials)
-- `create_pull(repo, title, patch, target_branch, body)` - patch-based PR (`git format-patch` output)
+- `create_pull(repo, title, patch | edits, target_branch, body)` - open a PR from `git format-patch` output, or from whole-file `edits` (no clone needed — the server synthesizes the patch)
 - `create_issue(repo, title, body, labels)`
 - `update_issue(issue, title, body)`
 - `set_issue_state(issue, state)` - close/reopen
