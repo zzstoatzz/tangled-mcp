@@ -17,6 +17,7 @@ from tangled_mcp.bobbin import resolve_handle
 from tangled_mcp.settings import PLC_URL, settings
 
 ISSUE = "sh.tangled.repo.issue"
+PULL = "sh.tangled.repo.pull"
 ISSUE_STATE = "sh.tangled.repo.issue.state"
 ISSUE_COMMENT = "sh.tangled.repo.issue.comment"
 LABEL_OP = "sh.tangled.label.op"
@@ -76,6 +77,18 @@ class Session:
             "com.atproto.repo.getRecord",
             params={"repo": self.did, "collection": collection, "rkey": rkey},
         )
+
+    async def upload_blob(self, data: bytes, mime_type: str) -> dict[str, Any]:
+        response = await self.client.post(
+            f"{self.pds}/xrpc/com.atproto.repo.uploadBlob",
+            content=data,
+            headers={"Content-Type": mime_type},
+        )
+        if not response.is_success:
+            raise RuntimeError(
+                f"uploadBlob failed ({response.status_code}) {response.text[:200]}"
+            )
+        return response.json()["blob"]
 
     async def delete_record(self, collection: str, rkey: str) -> None:
         await self._xrpc(

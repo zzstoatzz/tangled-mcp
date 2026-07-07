@@ -44,6 +44,7 @@ async def test_tools_registered():
         "list_pulls",
         "list_pipelines",
         "create_issue",
+        "create_pull",
         "update_issue",
         "set_issue_state",
         "comment_on_issue",
@@ -261,3 +262,71 @@ async def test_discover_pds_routes_by_did_method(monkeypatch: Any):
 
     assert await records.discover_pds("did:web:pds.example") == "https://pds.example"
     assert requested[-1] == "https://pds.example/.well-known/did.json"
+
+
+async def test_create_pull_record_shape(monkeypatch: Any):
+    import gzip
+
+    from tangled_mcp import records, server
+    from tangled_mcp.bobbin import Repo
+
+    async def fake_resolve(identifier: str) -> Repo:
+        return Repo(
+            owner_did="did:plc:owner",
+            name="myrepo",
+            uri="at://did:plc:owner/sh.tangled.repo/myrepo",
+            knot="knot1.tangled.sh",
+            repo_did="did:plc:repodid",
+            labels=[],
+            description=None,
+        )
+
+    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
+        assert nsid == "sh.tangled.repo.getDefaultBranch"
+        return {"name": "main"}
+
+    uploaded: dict[str, Any] = {}
+    put: dict[str, Any] = {}
+
+    class FakeSession:
+        did = "did:plc:me"
+
+        class client:
+            @staticmethod
+            async def aclose() -> None: ...
+
+        async def upload_blob(self, data: bytes, mime_type: str) -> dict[str, Any]:
+            uploaded["data"] = data
+            uploaded["mime_type"] = mime_type
+            return {"$type": "blob", "ref": {"$link": "bafyfake"}}
+
+        async def put_record(
+            self, collection: str, rkey: str, record: dict[str, Any]
+        ) -> dict[str, Any]:
+            put["collection"] = collection
+            put["record"] = record
+            return {"uri": f"at://did:plc:me/{collection}/{rkey}"}
+
+    monkeypatch.setattr(server.bobbin, "resolve_repo", fake_resolve)
+    monkeypatch.setattr(server.bobbin, "query", fake_query)
+
+    async def fake_login() -> Any:
+        return FakeSession()
+
+    monkeypatch.setattr(records, "login", fake_login)
+
+    result = await server.create_pull.fn(
+        repo="owner.example/myrepo",
+        title="fix things",
+        patch="From abc123 Mon Sep 17 00:00:00 2001\n...",
+        body="why not",
+    )
+
+    assert uploaded["mime_type"] == "application/gzip"
+    assert gzip.decompress(uploaded["data"]).startswith(b"From abc123")
+    record = put["record"]
+    assert put["collection"] == "sh.tangled.repo.pull"
+    assert record["target"] == {"repo": "did:plc:repodid", "branch": "main"}
+    assert record["rounds"][0]["patchBlob"]["ref"]["$link"] == "bafyfake"
+    assert result["uri"].startswith("at://did:plc:me/sh.tangled.repo.pull/")
+    assert "/pulls/" in result["url"]

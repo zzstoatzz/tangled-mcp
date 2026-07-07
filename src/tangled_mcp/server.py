@@ -4,6 +4,7 @@ reads go through bobbin (api.tangled.org, no auth); writes are atproto
 records put directly on the user's PDS.
 """
 
+import gzip
 from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
@@ -341,6 +342,61 @@ async def create_issue(
         return {
             "uri": result["uri"],
             "url": f"{APPVIEW_URL}/{repo.lstrip('@')}/issues/{rkey}",
+        }
+    finally:
+        await session.client.aclose()
+
+
+@tangled_mcp.tool
+async def create_pull(
+    repo: RepoParam,
+    title: Annotated[str, Field(description="pull request title")],
+    patch: Annotated[
+        str,
+        Field(
+            description="git format-patch output (`git format-patch <base> --stdout`) "
+            "containing the commits to propose"
+        ),
+    ],
+    target_branch: Annotated[
+        str | None,
+        Field(description="branch to merge into (repo default branch if omitted)"),
+    ] = None,
+    body: Annotated[
+        str | None, Field(description="pull request description (markdown)")
+    ] = None,
+) -> dict[str, str]:
+    """open a patch-based pull request on a repository.
+
+    the patch is gzipped and uploaded as a blob on your PDS, then referenced
+    from a sh.tangled.repo.pull record — no push access to the target needed.
+    """
+    r = await bobbin.resolve_repo(repo)
+    if not r.repo_did:
+        raise ValueError(f"repo '{repo}' has no repoDid; cannot create pulls")
+    if not target_branch:
+        default = await bobbin.query("sh.tangled.repo.getDefaultBranch", repo=r.uri)
+        target_branch = default.get("name") or "main"
+
+    session = await records.login()
+    try:
+        blob = await session.upload_blob(
+            gzip.compress(patch.encode()), "application/gzip"
+        )
+        rkey = records.tid()
+        record: dict[str, Any] = {
+            "$type": records.PULL,
+            "title": title,
+            "target": {"repo": r.repo_did, "branch": target_branch},
+            "rounds": [{"patchBlob": blob, "createdAt": records.now()}],
+            "createdAt": records.now(),
+        }
+        if body:
+            record["body"] = body
+        result = await session.put_record(records.PULL, rkey, record)
+        return {
+            "uri": result["uri"],
+            "url": f"{APPVIEW_URL}/{repo.lstrip('@')}/pulls/{rkey}",
         }
     finally:
         await session.client.aclose()
