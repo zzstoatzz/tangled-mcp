@@ -28,7 +28,7 @@ LEGACY_RECORD = {
 
 
 async def test_tools_registered():
-    tools = await tangled_mcp.get_tools()
+    tools = await tangled_mcp.list_tools()
     assert {
         "search",
         "list_repos",
@@ -51,7 +51,7 @@ async def test_tools_registered():
         "set_pull_state",
         "comment_on_issue",
         "delete_issue",
-    } <= set(tools)
+    } <= {tool.name for tool in tools}
 
 
 async def test_resolve_repo_new_style(monkeypatch: pytest.MonkeyPatch):
@@ -317,7 +317,7 @@ async def test_create_pull_record_shape(monkeypatch: Any):
 
     monkeypatch.setattr(records, "login", fake_login)
 
-    result = await server.create_pull.fn(
+    result = await server.create_pull(
         repo="owner.example/myrepo",
         title="fix things",
         patch="From abc123 Mon Sep 17 00:00:00 2001\n...",
