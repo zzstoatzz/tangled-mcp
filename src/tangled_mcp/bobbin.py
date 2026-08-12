@@ -177,19 +177,17 @@ async def resolve_repo(identifier: str) -> Repo:
 
 
 async def repo_query(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
-    """query a repo's git data via bobbin, falling back to the repo's knot.
+    """query a repo's git data on the repo's own knot, by repoDid.
 
-    bobbin 404s tree/blob/log/branches/tags for legacy-rkey repos
-    ("repository not found on this knot") even when the repo's knot serves
-    them fine when asked by repoDid — observed 2026-08-12 on
-    zzstoatzz.io/bot. bobbin stays the primary path; on a 404 the knot
-    named by the repo record is asked directly.
+    the knot is the authority for git data and serves every repo style by
+    repoDid, unauthenticated. bobbin's equivalents require the record
+    at-uri and 404 legacy-rkey repos outright ("repository not found on
+    this knot"), plus rate-limit unauthenticated callers — observed
+    2026-08-12 when phi couldn't read her own source. bobbin is only the
+    fallback for repo records that carry no knot/repoDid.
     """
-    try:
+    if not (r.knot and r.repo_did):
         return await query(nsid, repo=r.uri, **params)
-    except BobbinError as e:
-        if "(404)" not in str(e) or not (r.knot and r.repo_did):
-            raise
     clean = {k: v for k, v in params.items() if v is not None}
     response = await _client.get(
         f"https://{r.knot}/xrpc/{nsid}", params={"repo": r.repo_did, **clean}
