@@ -159,7 +159,7 @@ async def get_repo(repo: RepoParam) -> dict[str, Any]:
 async def list_branches(repo: RepoParam, limit: Limit = 50) -> list[dict[str, Any]]:
     """list branches with their head commits"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.query("sh.tangled.repo.branches", repo=r.uri, limit=limit)
+    body = await bobbin.repo_query(r, "sh.tangled.repo.branches", limit=limit)
     return [
         {
             "name": b["reference"]["name"],
@@ -174,7 +174,7 @@ async def list_branches(repo: RepoParam, limit: Limit = 50) -> list[dict[str, An
 async def list_tags(repo: RepoParam, limit: Limit = 50) -> list[dict[str, Any]]:
     """list tags"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.query("sh.tangled.repo.tags", repo=r.uri, limit=limit)
+    body = await bobbin.repo_query(r, "sh.tangled.repo.tags", limit=limit)
     return [
         {"name": t.get("name"), "sha": t.get("hash"), "message": t.get("message")}
         for t in body.get("tags") or []
@@ -191,7 +191,7 @@ async def list_files(
 ) -> list[dict[str, Any]]:
     """list files in a repository directory"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.query("sh.tangled.repo.tree", repo=r.uri, path=path, ref=ref)
+    body = await bobbin.repo_query(r, "sh.tangled.repo.tree", path=path, ref=ref)
     return [
         {
             "name": f["name"],
@@ -210,7 +210,7 @@ async def read_file(
 ) -> str:
     """read a file's contents from a repository"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.query("sh.tangled.repo.blob", repo=r.uri, path=path, ref=ref)
+    body = await bobbin.repo_query(r, "sh.tangled.repo.blob", path=path, ref=ref)
     return body.get("content") or ""
 
 
@@ -222,7 +222,7 @@ async def commit_log(
 ) -> list[dict[str, Any]]:
     """list recent commits"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.query("sh.tangled.repo.log", repo=r.uri, ref=ref, limit=limit)
+    body = await bobbin.repo_query(r, "sh.tangled.repo.log", ref=ref, limit=limit)
     return [
         {
             "sha": c.get("this"),
@@ -242,8 +242,8 @@ async def compare(
 ) -> dict[str, Any]:
     """compare two revisions (diff summary)"""
     r = await bobbin.resolve_repo(repo)
-    return await bobbin.query(
-        "sh.tangled.repo.compare", repo=r.uri, rev1=rev1, rev2=rev2
+    return await bobbin.repo_query(
+        r, "sh.tangled.repo.compare", rev1=rev1, rev2=rev2
     )
 
 

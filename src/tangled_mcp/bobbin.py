@@ -174,3 +174,29 @@ async def resolve_repo(identifier: str) -> Repo:
         cursor = page.get("cursor")
         if not cursor or not page.get("items"):
             raise ValueError(f"repo '{name}' not found for owner '{owner}'")
+
+
+async def repo_query(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+    """query a repo's git data via bobbin, falling back to the repo's knot.
+
+    bobbin 404s tree/blob/log/branches/tags for legacy-rkey repos
+    ("repository not found on this knot") even when the repo's knot serves
+    them fine when asked by repoDid — observed 2026-08-12 on
+    zzstoatzz.io/bot. bobbin stays the primary path; on a 404 the knot
+    named by the repo record is asked directly.
+    """
+    try:
+        return await query(nsid, repo=r.uri, **params)
+    except BobbinError as e:
+        if "(404)" not in str(e) or not (r.knot and r.repo_did):
+            raise
+    clean = {k: v for k, v in params.items() if v is not None}
+    response = await _client.get(
+        f"https://{r.knot}/xrpc/{nsid}", params={"repo": r.repo_did, **clean}
+    )
+    if response.is_success:
+        return response.json()
+    raise BobbinError(
+        f"{nsid} failed on knot {r.knot} ({response.status_code}) "
+        f"{response.text[:200]}"
+    )
