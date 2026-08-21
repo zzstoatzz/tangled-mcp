@@ -47,6 +47,7 @@ async def test_tools_registered():
         "create_issue",
         "create_pull",
         "update_pull",
+        "get_pull_file",
         "update_issue",
         "set_issue_state",
         "set_pull_state",

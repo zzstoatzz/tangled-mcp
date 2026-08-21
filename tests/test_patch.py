@@ -63,3 +63,23 @@ def test_git_am_handles_missing_trailing_newline(repo: Path):
     )
     _git(repo, "am", input=patch)
     assert (repo / "edit.txt").read_text() == "line one\nno end"
+
+
+def test_apply_to_file_round_trips_a_synthesized_patch():
+    from tangled_mcp.patch import apply_to_file, synthesize
+
+    old = "# phi\n\nlong file\nline three\n"
+    new = "toast\n"
+    patch = synthesize("t", "phi", [("personalities/phi.md", old, new)])
+    assert apply_to_file(patch, "personalities/phi.md", old) == new
+    assert apply_to_file(patch, "other.md", old) is None
+
+
+def test_apply_to_file_handles_no_trailing_newline_and_new_files():
+    from tangled_mcp.patch import apply_to_file, synthesize
+
+    patch = synthesize(
+        "t", "phi", [("a.md", "x\ny\n", "x\nz"), ("b.md", None, "new\n")]
+    )
+    assert apply_to_file(patch, "a.md", "x\ny\n") == "x\nz"
+    assert apply_to_file(patch, "b.md", "") == "new\n"

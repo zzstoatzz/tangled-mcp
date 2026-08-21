@@ -72,3 +72,65 @@ def synthesize(
         "-- \n"
         "tangled-mcp\n"
     )
+
+
+def apply_to_file(patch_text: str, path: str, base: str) -> str | None:
+    """the content of *path* after *patch_text* is applied to *base*.
+
+    returns None when the patch does not touch the path. handles the
+    unified hunks git format-patch emits (including our own synthesized
+    ones); a hunk whose context does not match raises ValueError rather
+    than guessing.
+    """
+    marker = f"diff --git a/{path} b/{path}\n"
+    start = patch_text.find(marker)
+    if start < 0:
+        return None
+    end = patch_text.find("\ndiff --git ", start + 1)
+    section = patch_text[start : end if end >= 0 else len(patch_text)]
+    if "deleted file mode" in section.split("@@", 1)[0]:
+        return ""
+    old_lines = base.splitlines(keepends=True)
+    out: list[str] = []
+    cursor = 0
+    lines = section.splitlines(keepends=True)
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not line.startswith("@@"):
+            i += 1
+            continue
+        header = line.split("@@")[1].strip()
+        old_start = int(header.split(" ")[0].lstrip("-").split(",")[0])
+        target = max(old_start - 1, 0)
+        out.extend(old_lines[cursor:target])
+        cursor = target
+        i += 1
+        while i < len(lines) and not lines[i].startswith("@@"):
+            hl = lines[i]
+            if hl.startswith("\\"):
+                if out and out[-1].endswith("\n"):
+                    out[-1] = out[-1][:-1]
+                i += 1
+                continue
+            tag, body = hl[0], hl[1:]
+            if tag == " ":
+                if cursor >= len(old_lines) or old_lines[cursor] != body:
+                    raise ValueError(
+                        f"patch context mismatch at {path} line {cursor + 1}"
+                    )
+                out.append(body)
+                cursor += 1
+            elif tag == "-":
+                if cursor >= len(old_lines) or old_lines[cursor] != body:
+                    raise ValueError(
+                        f"patch removal mismatch at {path} line {cursor + 1}"
+                    )
+                cursor += 1
+            elif tag == "+":
+                out.append(body)
+            else:
+                break
+            i += 1
+    out.extend(old_lines[cursor:])
+    return "".join(out)

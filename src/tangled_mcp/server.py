@@ -7,10 +7,12 @@ records put directly on the user's PDS.
 import gzip
 from typing import Annotated, Any, Literal
 
+import httpx
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from tangled_mcp import bobbin, records
+from tangled_mcp.patch import apply_to_file
 from tangled_mcp.patch import synthesize as synthesize_patch
 from tangled_mcp.settings import APPVIEW_URL
 
@@ -560,6 +562,59 @@ async def set_issue_state(
         return {"uri": result["uri"], "state": state}
     finally:
         await session.client.aclose()
+
+
+async def _pull_round_patch(pull_value: dict[str, Any], author_did: str) -> str:
+    """the latest round's patch text for a pull record."""
+    rounds = pull_value.get("rounds") or []
+    if not rounds:
+        raise ValueError("pull request has no rounds")
+    ref = (rounds[-1].get("patchBlob") or {}).get("ref") or {}
+    cid = ref.get("$link") if isinstance(ref, dict) else None
+    if not cid:
+        raise ValueError("latest round has no patch blob")
+    pds = await records.discover_pds(author_did)
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.get(
+            f"{pds}/xrpc/com.atproto.sync.getBlob",
+            params={"did": author_did, "cid": cid},
+        )
+        response.raise_for_status()
+        data = response.content
+    try:
+        return gzip.decompress(data).decode()
+    except (OSError, EOFError):
+        return data.decode()
+
+
+@tangled_mcp.tool
+async def get_pull_file(
+    pull: Annotated[
+        str,
+        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
+    ],
+    path: Annotated[str, Field(description="file path within the repo")],
+) -> str:
+    """a file as the pull request's latest round leaves it — the base branch
+    plus the round's patch. revise a pull from this, not from read_file on
+    the target branch: the branch does not have the pull's changes yet."""
+    author = pull.removeprefix("at://").split("/")[0]
+    record = await bobbin.get_record(pull)
+    value = record.get("value") or {}
+    target = value.get("target") or {}
+    r = await bobbin.resolve_repo(target.get("repo") or "")
+    branch = target.get("branch") or await _default_branch(r)
+    try:
+        base = (
+            await bobbin.repo_query(r, "sh.tangled.repo.blob", path=path, ref=branch)
+        ).get("content") or ""
+    except bobbin.BobbinError as err:
+        if err.status != 404:
+            raise
+        base = ""
+    patch = await _pull_round_patch(value, author)
+    content = apply_to_file(patch, path, base)
+    return base if content is None else content
 
 
 @tangled_mcp.tool
