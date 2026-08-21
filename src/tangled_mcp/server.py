@@ -394,6 +394,38 @@ class Edit(BaseModel):
     content: str | None = None
 
 
+async def _patch_from_edits(
+    r: bobbin.Repo, title: str, target_branch: str, edits: list["Edit"]
+) -> str:
+    """a single-commit format-patch from whole-file edits, diffed against
+    the target branch on the repo's knot."""
+    files = []
+    for e in edits:
+        # the knot is the authority for git data (see repo_query). until
+        # 2026-08-21 this asked bobbin and treated any failure as "new
+        # file", so a rate-limit or a legacy-rkey 404 produced a
+        # /dev/null patch for a file that exists — unmergeable, and
+        # silent about why. only a real not-found means new.
+        try:
+            base = await bobbin.repo_query(
+                r, "sh.tangled.repo.blob", path=e.path, ref=target_branch
+            )
+            old = base.get("content") or ""
+        except bobbin.BobbinError as err:
+            if err.status != 404:
+                raise ValueError(
+                    f"could not read current '{e.path}' on {target_branch}: {err}"
+                ) from err
+            old = None
+        if old is None and e.content is None:
+            raise ValueError(f"cannot delete '{e.path}': not in {target_branch}")
+        if old == e.content:
+            raise ValueError(f"'{e.path}' already has that content")
+        files.append((e.path, old, e.content))
+    author = records.resolve_credentials().handle or "unknown"
+    return synthesize_patch(title, author, files)
+
+
 async def _default_branch(r: bobbin.Repo) -> str:
     """the repo's default branch, from the knot first. bobbin rate-limits
     unauthenticated callers (phi hit 429 here on 2026-08-21 with a finished
@@ -454,31 +486,7 @@ async def create_pull(
         target_branch = await _default_branch(r)
 
     if edits is not None:
-        files = []
-        for e in edits:
-            # the knot is the authority for git data (see repo_query). until
-            # 2026-08-21 this asked bobbin and treated any failure as "new
-            # file", so a rate-limit or a legacy-rkey 404 produced a
-            # /dev/null patch for a file that exists — unmergeable, and
-            # silent about why. only a real not-found means new.
-            try:
-                base = await bobbin.repo_query(
-                    r, "sh.tangled.repo.blob", path=e.path, ref=target_branch
-                )
-                old = base.get("content") or ""
-            except bobbin.BobbinError as err:
-                if err.status != 404:
-                    raise ValueError(
-                        f"could not read current '{e.path}' on {target_branch}: {err}"
-                    ) from err
-                old = None
-            if old is None and e.content is None:
-                raise ValueError(f"cannot delete '{e.path}': not in {target_branch}")
-            if old == e.content:
-                raise ValueError(f"'{e.path}' already has that content")
-            files.append((e.path, old, e.content))
-        author = records.resolve_credentials().handle or "unknown"
-        patch = synthesize_patch(title, author, files)
+        patch = await _patch_from_edits(r, title, target_branch, edits)
     assert patch is not None
 
     session = await records.login()
@@ -550,6 +558,65 @@ async def set_issue_state(
         }
         result = await session.put_record(records.ISSUE_STATE, records.tid(), record)
         return {"uri": result["uri"], "state": state}
+    finally:
+        await session.client.aclose()
+
+
+@tangled_mcp.tool
+async def update_pull(
+    pull: Annotated[
+        str,
+        Field(
+            description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey) — must be yours"
+        ),
+    ],
+    edits: Annotated[
+        list[Edit],
+        Field(
+            description="full desired content per file (content=null deletes the file); diffed against the target branch"
+        ),
+    ],
+    note: Annotated[
+        str | None,
+        Field(
+            description="optional: what this round changes, appended to the pull body"
+        ),
+    ] = None,
+) -> dict[str, Any]:
+    """push a new round onto an existing pull request instead of opening a
+    new one. reviewers comment on a pull; the revision belongs on that same
+    pull. the patch is synthesized against the target branch, so pass the
+    whole file as you want it now."""
+    did, collection, rkey = pull.removeprefix("at://").split("/", 2)
+    if collection != records.PULL:
+        raise ValueError(f"not a pull request uri: {pull}")
+    session = await records.login()
+    try:
+        if session.did != did:
+            raise ValueError("you can only add rounds to your own pull requests")
+        current = (await session.get_record(records.PULL, rkey)).get("value") or {}
+        target = current.get("target") or {}
+        r = await bobbin.resolve_repo(target.get("repo") or "")
+        branch = target.get("branch") or await _default_branch(r)
+        patch = await _patch_from_edits(
+            r, current.get("title") or "update", branch, edits
+        )
+        blob = await session.upload_blob(
+            gzip.compress(patch.encode()), "application/gzip"
+        )
+        rounds = list(current.get("rounds") or [])
+        rounds.append({"patchBlob": blob, "createdAt": records.now()})
+        record = {**current, "rounds": rounds}
+        if note:
+            record["body"] = (
+                (current.get("body") or "") + f"\n\n---\nround {len(rounds)}: {note}"
+            ).strip()
+        result = await session.put_record(records.PULL, rkey, record)
+        return {
+            "uri": result["uri"],
+            "round": len(rounds),
+            "url": f"{APPVIEW_URL}/{r.name and (r.owner_did + '/' + r.name)}/pulls",
+        }
     finally:
         await session.client.aclose()
 

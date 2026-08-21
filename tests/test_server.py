@@ -46,6 +46,7 @@ async def test_tools_registered():
         "list_pipelines",
         "create_issue",
         "create_pull",
+        "update_pull",
         "update_issue",
         "set_issue_state",
         "set_pull_state",
@@ -503,3 +504,112 @@ async def test_comment_on_pull_record_shape(monkeypatch: Any):
     assert put["record"]["body"]["text"] == "2/10"
     assert put["record"]["body"]["$type"] == "sh.tangled.markup.markdown"
     assert result["uri"].startswith("at://did:plc:me/sh.tangled.feed.comment/")
+
+
+async def test_update_pull_appends_a_round_to_the_same_record(monkeypatch: Any):
+    """2026-08-21: asked to revise after a review, phi closed the reviewed
+    pull and opened a new one, because the tool had no way to add a round.
+    A revision belongs on the pull the reviewer commented on."""
+    import gzip
+
+    from tangled_mcp import records, server
+    from tangled_mcp.bobbin import Repo
+
+    repo = Repo(
+        owner_did="did:plc:owner",
+        name="bot",
+        uri="at://did:plc:owner/sh.tangled.repo/bot",
+        knot="knot1.tangled.sh",
+        repo_did="did:plc:repodid",
+        labels=[],
+        description=None,
+    )
+    existing = {
+        "$type": records.PULL,
+        "title": "toast",
+        "body": "v1",
+        "target": {"repo": "did:plc:repodid", "branch": "main"},
+        "rounds": [
+            {
+                "patchBlob": {"ref": {"$link": "bafyold"}},
+                "createdAt": "2026-08-21T08:00:00Z",
+            }
+        ],
+        "createdAt": "2026-08-21T08:00:00Z",
+    }
+    put: dict[str, Any] = {}
+
+    class FakeSession:
+        did = "did:plc:phi"
+
+        class client:
+            @staticmethod
+            async def aclose() -> None: ...
+
+        async def get_record(self, collection: str, rkey: str) -> dict[str, Any]:
+            assert (collection, rkey) == (records.PULL, "3abc")
+            return {"value": existing}
+
+        async def upload_blob(self, data: bytes, mime_type: str) -> dict[str, Any]:
+            put["patch"] = gzip.decompress(data).decode()
+            return {"$type": "blob", "ref": {"$link": "bafynew"}}
+
+        async def put_record(
+            self, collection: str, rkey: str, record: dict[str, Any]
+        ) -> dict[str, Any]:
+            put["rkey"] = rkey
+            put["record"] = record
+            return {"uri": f"at://did:plc:phi/{collection}/{rkey}"}
+
+    async def fake_login() -> Any:
+        return FakeSession()
+
+    async def fake_resolve(identifier: str) -> Repo:
+        assert identifier == "did:plc:repodid"
+        return repo
+
+    async def knot(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+        assert nsid == "sh.tangled.repo.blob" and params["ref"] == "main"
+        return {"content": "old\n"}
+
+    monkeypatch.setattr(records, "login", fake_login)
+    monkeypatch.setattr(
+        records, "resolve_credentials", lambda: type("C", (), {"handle": "phi"})()
+    )
+    monkeypatch.setattr(server.bobbin, "resolve_repo", fake_resolve)
+    monkeypatch.setattr(server.bobbin, "repo_query", knot)
+
+    result = await server.update_pull(
+        pull="at://did:plc:phi/sh.tangled.repo.pull/3abc",
+        edits=[server.Edit(path="personalities/phi.md", content="new\n")],
+        note="feynman, not peers",
+    )
+    assert put["rkey"] == "3abc"
+    assert len(put["record"]["rounds"]) == 2
+    assert put["record"]["rounds"][0]["patchBlob"]["ref"]["$link"] == "bafyold"
+    assert put["record"]["rounds"][1]["patchBlob"]["ref"]["$link"] == "bafynew"
+    assert "-old" in put["patch"] and "+new" in put["patch"]
+    assert put["record"]["body"].endswith("round 2: feynman, not peers")
+    assert result["round"] == 2
+
+
+async def test_update_pull_refuses_someone_elses_pull(monkeypatch: Any):
+    from tangled_mcp import records, server
+
+    class FakeSession:
+        did = "did:plc:phi"
+
+        class client:
+            @staticmethod
+            async def aclose() -> None: ...
+
+    async def fake_login() -> Any:
+        return FakeSession()
+
+    monkeypatch.setattr(records, "login", fake_login)
+    import pytest
+
+    with pytest.raises(ValueError, match="your own"):
+        await server.update_pull(
+            pull="at://did:plc:other/sh.tangled.repo.pull/3abc", edits=[]
+        )
