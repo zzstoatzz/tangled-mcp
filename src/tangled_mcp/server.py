@@ -242,9 +242,7 @@ async def compare(
 ) -> dict[str, Any]:
     """compare two revisions (diff summary)"""
     r = await bobbin.resolve_repo(repo)
-    return await bobbin.repo_query(
-        r, "sh.tangled.repo.compare", rev1=rev1, rev2=rev2
-    )
+    return await bobbin.repo_query(r, "sh.tangled.repo.compare", rev1=rev1, rev2=rev2)
 
 
 # --- issues & pulls ----------------------------------------------------------
@@ -396,6 +394,24 @@ class Edit(BaseModel):
     content: str | None = None
 
 
+async def _default_branch(r: bobbin.Repo) -> str:
+    """the repo's default branch, from the knot first. bobbin rate-limits
+    unauthenticated callers (phi hit 429 here on 2026-08-21 with a finished
+    pull request in hand); the knot serves git data without limits, and
+    "main" is the right answer when neither will say."""
+    for attempt in (
+        lambda: bobbin.repo_query(r, "sh.tangled.repo.getDefaultBranch"),
+        lambda: bobbin.query("sh.tangled.repo.getDefaultBranch", repo=r.uri),
+    ):
+        try:
+            body = await attempt()
+        except bobbin.BobbinError:
+            continue
+        if name := body.get("name"):
+            return name
+    return "main"
+
+
 @tangled_mcp.tool
 async def create_pull(
     repo: RepoParam,
@@ -435,8 +451,7 @@ async def create_pull(
     if not r.repo_did:
         raise ValueError(f"repo '{repo}' has no repoDid; cannot create pulls")
     if not target_branch:
-        default = await bobbin.query("sh.tangled.repo.getDefaultBranch", repo=r.uri)
-        target_branch = default.get("name") or "main"
+        target_branch = await _default_branch(r)
 
     if edits is not None:
         files = []

@@ -287,6 +287,13 @@ async def test_create_pull_record_shape(monkeypatch: Any):
         assert nsid == "sh.tangled.repo.getDefaultBranch"
         return {"name": "main"}
 
+    async def fake_repo_query(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+        from tangled_mcp.bobbin import BobbinError
+
+        raise BobbinError(f"{nsid} not on this fake knot", status=404)
+
+    monkeypatch.setattr(server.bobbin, "repo_query", fake_repo_query)
+
     uploaded: dict[str, Any] = {}
     put: dict[str, Any] = {}
 
@@ -390,7 +397,10 @@ async def test_create_pull_edits_diff_against_the_knot_and_fail_loud(monkeypatch
 
     # existing file on the knot → a modification, not a creation
     async def knot_has_file(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
-        assert r is repo and nsid == "sh.tangled.repo.blob"
+        assert r is repo
+        if nsid == "sh.tangled.repo.getDefaultBranch":
+            return {"name": "main"}
+        assert nsid == "sh.tangled.repo.blob"
         assert params == {"path": "personalities/phi.md", "ref": "main"}
         return {"content": "old text\n"}
 
@@ -405,6 +415,8 @@ async def test_create_pull_edits_diff_against_the_knot_and_fail_loud(monkeypatch
 
     # a non-404 failure is an error, never "new file"
     async def knot_rate_limited(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+        if nsid == "sh.tangled.repo.getDefaultBranch":
+            return {"name": "main"}
         raise BobbinError("blob failed (429) slow down", status=429)
 
     monkeypatch.setattr(server.bobbin, "repo_query", knot_rate_limited)
@@ -419,6 +431,8 @@ async def test_create_pull_edits_diff_against_the_knot_and_fail_loud(monkeypatch
 
     # a real 404 is a new file
     async def knot_not_found(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+        if nsid == "sh.tangled.repo.getDefaultBranch":
+            return {"name": "main"}
         raise BobbinError("blob failed (404) not found", status=404)
 
     monkeypatch.setattr(server.bobbin, "repo_query", knot_not_found)
@@ -428,3 +442,28 @@ async def test_create_pull_edits_diff_against_the_knot_and_fail_loud(monkeypatch
         edits=[server.Edit(path="docs/new.md", content="hello\n")],
     )
     assert "--- /dev/null" in captured["patch"]
+
+
+async def test_default_branch_survives_bobbin_rate_limit(monkeypatch: Any):
+    from tangled_mcp import server
+    from tangled_mcp.bobbin import BobbinError, Repo
+
+    repo = Repo(
+        owner_did="d",
+        name="bot",
+        uri="at://d/sh.tangled.repo/bot",
+        knot="knot1.tangled.sh",
+        repo_did="did:plc:r",
+        labels=[],
+        description=None,
+    )
+
+    async def knot_silent(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+        raise BobbinError("nope", status=404)
+
+    async def bobbin_429(nsid: str, **params: Any) -> dict[str, Any]:
+        raise BobbinError("getDefaultBranch failed (429)", status=429)
+
+    monkeypatch.setattr(server.bobbin, "repo_query", knot_silent)
+    monkeypatch.setattr(server.bobbin, "query", bobbin_429)
+    assert await server._default_branch(repo) == "main"
