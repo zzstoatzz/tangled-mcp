@@ -108,6 +108,8 @@ def apply_to_file(patch_text: str, path: str, base: str) -> str | None:
         i += 1
         while i < len(lines) and not lines[i].startswith("@@"):
             hl = lines[i]
+            if hl == "-- \n":
+                break  # format-patch signature, not a removal
             if hl.startswith("\\"):
                 if out and out[-1].endswith("\n"):
                     out[-1] = out[-1][:-1]
