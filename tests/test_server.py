@@ -491,9 +491,15 @@ async def test_comment_on_pull_record_shape(monkeypatch: Any):
         return FakeSession()
 
     monkeypatch.setattr(records, "login", fake_login)
+
+    async def fake_get_record(uri: str) -> dict[str, Any]:
+        return {"uri": uri, "cid": "bafypull", "value": {}}
+
+    monkeypatch.setattr(server.bobbin, "get_record", fake_get_record)
     pull = "at://did:plc:phi/sh.tangled.repo.pull/3abc"
     result = await server.comment_on_pull(pull=pull, body="2/10")
-    assert put["collection"] == "sh.tangled.repo.pull.comment"
-    assert put["record"]["pull"] == pull and put["record"]["body"] == "2/10"
-    assert put["record"]["$type"] == "sh.tangled.repo.pull.comment"
-    assert result["uri"].startswith("at://did:plc:me/sh.tangled.repo.pull.comment/")
+    assert put["collection"] == "sh.tangled.feed.comment"
+    assert put["record"]["subject"] == {"uri": pull, "cid": "bafypull"}
+    assert put["record"]["body"]["text"] == "2/10"
+    assert put["record"]["body"]["$type"] == "sh.tangled.markup.markdown"
+    assert result["uri"].startswith("at://did:plc:me/sh.tangled.feed.comment/")

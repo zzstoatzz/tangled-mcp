@@ -613,16 +613,23 @@ async def comment_on_pull(
     ],
     body: Annotated[str, Field(description="comment body (markdown)")],
 ) -> dict[str, str]:
-    """comment on a pull request — the record lands in your repo, pointing at the pull"""
+    """comment on a pull request — the record lands in your repo, pointing at the pull.
+
+    tangled's current comment lexicon is sh.tangled.feed.comment: a subject
+    strong ref (the pull's uri + cid) and a markdown body object. The legacy
+    sh.tangled.repo.pull.comment is not rendered on the pull page any more.
+    """
+    target = await bobbin.get_record(pull)
     session = await records.login()
     try:
         record = {
-            "$type": records.PULL_COMMENT,
-            "pull": pull,
-            "body": body,
+            "$type": records.FEED_COMMENT,
+            "subject": {"uri": pull, "cid": target.get("cid")},
+            "body": {"$type": records.MARKDOWN, "text": body, "original": body},
+            "pullRoundIdx": 0,
             "createdAt": records.now(),
         }
-        result = await session.put_record(records.PULL_COMMENT, records.tid(), record)
+        result = await session.put_record(records.FEED_COMMENT, records.tid(), record)
         return {"uri": result["uri"]}
     finally:
         await session.client.aclose()
