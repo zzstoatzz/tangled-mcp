@@ -15,7 +15,12 @@ _client = httpx.AsyncClient(timeout=15.0)
 
 
 class BobbinError(RuntimeError):
-    pass
+    """an xrpc read failed. `status` is the HTTP status when there was one,
+    so callers can tell not-found from everything else."""
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
 
 
 async def query(nsid: str, **params: Any) -> dict[str, Any]:
@@ -29,7 +34,9 @@ async def query(nsid: str, **params: Any) -> dict[str, Any]:
         message = f"{payload.get('error', 'error')}: {payload.get('message', '')}"
     except Exception:
         message = response.text[:200]
-    raise BobbinError(f"{nsid} failed ({response.status_code}) {message}")
+    raise BobbinError(
+        f"{nsid} failed ({response.status_code}) {message}", status=response.status_code
+    )
 
 
 async def resolve_handle(handle: str) -> str:
@@ -196,5 +203,6 @@ async def repo_query(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
         return response.json()
     raise BobbinError(
         f"{nsid} failed on knot {r.knot} ({response.status_code}) "
-        f"{response.text[:200]}"
+        f"{response.text[:200]}",
+        status=response.status_code,
     )

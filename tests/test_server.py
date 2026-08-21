@@ -332,3 +332,99 @@ async def test_create_pull_record_shape(monkeypatch: Any):
     assert record["rounds"][0]["patchBlob"]["ref"]["$link"] == "bafyfake"
     assert result["uri"].startswith("at://did:plc:me/sh.tangled.repo.pull/")
     assert result["url"].endswith("/pulls")
+
+
+async def test_create_pull_edits_diff_against_the_knot_and_fail_loud(monkeypatch: Any):
+    """2026-08-21: phi's pull request against personalities/phi.md arrived as
+    a new-file patch (--- /dev/null) and would not apply: the base read went
+    to bobbin, failed, and the failure was read as "file does not exist".
+    The base now comes from the repo's knot, and only a 404 means new."""
+    from tangled_mcp import records, server
+    from tangled_mcp.bobbin import BobbinError, Repo
+
+    repo = Repo(
+        owner_did="did:plc:owner",
+        name="bot",
+        uri="at://did:plc:owner/sh.tangled.repo/bot",
+        knot="knot1.tangled.sh",
+        repo_did="did:plc:repodid",
+        labels=[],
+        description=None,
+    )
+
+    async def fake_resolve(identifier: str) -> Repo:
+        return repo
+
+    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
+        return {"name": "main"}
+
+    captured: dict[str, Any] = {}
+
+    class FakeSession:
+        did = "did:plc:me"
+
+        class client:
+            @staticmethod
+            async def aclose() -> None: ...
+
+        async def upload_blob(self, data: bytes, mime_type: str) -> dict[str, Any]:
+            import gzip
+
+            captured["patch"] = gzip.decompress(data).decode()
+            return {"$type": "blob", "ref": {"$link": "bafyfake"}}
+
+        async def put_record(
+            self, collection: str, rkey: str, record: dict[str, Any]
+        ) -> dict[str, Any]:
+            return {"uri": f"at://did:plc:me/{collection}/{rkey}"}
+
+    async def fake_login() -> Any:
+        return FakeSession()
+
+    monkeypatch.setattr(server.bobbin, "resolve_repo", fake_resolve)
+    monkeypatch.setattr(server.bobbin, "query", fake_query)
+    monkeypatch.setattr(records, "login", fake_login)
+    monkeypatch.setattr(
+        records, "resolve_credentials", lambda: type("C", (), {"handle": "phi"})()
+    )
+
+    # existing file on the knot → a modification, not a creation
+    async def knot_has_file(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+        assert r is repo and nsid == "sh.tangled.repo.blob"
+        assert params == {"path": "personalities/phi.md", "ref": "main"}
+        return {"content": "old text\n"}
+
+    monkeypatch.setattr(server.bobbin, "repo_query", knot_has_file)
+    await server.create_pull(
+        repo="zzstoatzz.io/bot",
+        title="t",
+        edits=[server.Edit(path="personalities/phi.md", content="new text\n")],
+    )
+    assert "--- /dev/null" not in captured["patch"]
+    assert "-old text" in captured["patch"] and "+new text" in captured["patch"]
+
+    # a non-404 failure is an error, never "new file"
+    async def knot_rate_limited(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+        raise BobbinError("blob failed (429) slow down", status=429)
+
+    monkeypatch.setattr(server.bobbin, "repo_query", knot_rate_limited)
+    import pytest
+
+    with pytest.raises(ValueError, match="could not read current"):
+        await server.create_pull(
+            repo="zzstoatzz.io/bot",
+            title="t",
+            edits=[server.Edit(path="personalities/phi.md", content="x")],
+        )
+
+    # a real 404 is a new file
+    async def knot_not_found(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+        raise BobbinError("blob failed (404) not found", status=404)
+
+    monkeypatch.setattr(server.bobbin, "repo_query", knot_not_found)
+    await server.create_pull(
+        repo="zzstoatzz.io/bot",
+        title="t",
+        edits=[server.Edit(path="docs/new.md", content="hello\n")],
+    )
+    assert "--- /dev/null" in captured["patch"]

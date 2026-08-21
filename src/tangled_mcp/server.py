@@ -441,12 +441,21 @@ async def create_pull(
     if edits is not None:
         files = []
         for e in edits:
+            # the knot is the authority for git data (see repo_query). until
+            # 2026-08-21 this asked bobbin and treated any failure as "new
+            # file", so a rate-limit or a legacy-rkey 404 produced a
+            # /dev/null patch for a file that exists — unmergeable, and
+            # silent about why. only a real not-found means new.
             try:
-                base = await bobbin.query(
-                    "sh.tangled.repo.blob", repo=r.uri, path=e.path, ref=target_branch
+                base = await bobbin.repo_query(
+                    r, "sh.tangled.repo.blob", path=e.path, ref=target_branch
                 )
                 old = base.get("content") or ""
-            except bobbin.BobbinError:
+            except bobbin.BobbinError as err:
+                if err.status != 404:
+                    raise ValueError(
+                        f"could not read current '{e.path}' on {target_branch}: {err}"
+                    ) from err
                 old = None
             if old is None and e.content is None:
                 raise ValueError(f"cannot delete '{e.path}': not in {target_branch}")
