@@ -50,6 +50,7 @@ async def test_tools_registered():
         "set_issue_state",
         "set_pull_state",
         "comment_on_issue",
+        "comment_on_pull",
         "delete_issue",
     } <= {tool.name for tool in tools}
 
@@ -467,3 +468,32 @@ async def test_default_branch_survives_bobbin_rate_limit(monkeypatch: Any):
     monkeypatch.setattr(server.bobbin, "repo_query", knot_silent)
     monkeypatch.setattr(server.bobbin, "query", bobbin_429)
     assert await server._default_branch(repo) == "main"
+
+
+async def test_comment_on_pull_record_shape(monkeypatch: Any):
+    from tangled_mcp import records, server
+
+    put: dict[str, Any] = {}
+
+    class FakeSession:
+        class client:
+            @staticmethod
+            async def aclose() -> None: ...
+
+        async def put_record(
+            self, collection: str, rkey: str, record: dict[str, Any]
+        ) -> dict[str, Any]:
+            put["collection"] = collection
+            put["record"] = record
+            return {"uri": f"at://did:plc:me/{collection}/{rkey}"}
+
+    async def fake_login() -> Any:
+        return FakeSession()
+
+    monkeypatch.setattr(records, "login", fake_login)
+    pull = "at://did:plc:phi/sh.tangled.repo.pull/3abc"
+    result = await server.comment_on_pull(pull=pull, body="2/10")
+    assert put["collection"] == "sh.tangled.repo.pull.comment"
+    assert put["record"]["pull"] == pull and put["record"]["body"] == "2/10"
+    assert put["record"]["$type"] == "sh.tangled.repo.pull.comment"
+    assert result["uri"].startswith("at://did:plc:me/sh.tangled.repo.pull.comment/")

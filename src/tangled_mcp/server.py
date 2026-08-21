@@ -606,6 +606,29 @@ async def comment_on_issue(
 
 
 @tangled_mcp.tool
+async def comment_on_pull(
+    pull: Annotated[
+        str,
+        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
+    ],
+    body: Annotated[str, Field(description="comment body (markdown)")],
+) -> dict[str, str]:
+    """comment on a pull request — the record lands in your repo, pointing at the pull"""
+    session = await records.login()
+    try:
+        record = {
+            "$type": records.PULL_COMMENT,
+            "pull": pull,
+            "body": body,
+            "createdAt": records.now(),
+        }
+        result = await session.put_record(records.PULL_COMMENT, records.tid(), record)
+        return {"uri": result["uri"]}
+    finally:
+        await session.client.aclose()
+
+
+@tangled_mcp.tool
 async def delete_issue(issue: IssueParam) -> dict[str, str]:
     """delete an issue you authored"""
     uri = await _issue_uri(issue)
