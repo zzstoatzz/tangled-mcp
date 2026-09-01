@@ -48,6 +48,7 @@ async def test_tools_registered():
         "create_pull",
         "update_pull",
         "get_pull_file",
+        "get_pull_patch",
         "update_issue",
         "set_issue_state",
         "set_pull_state",
@@ -614,3 +615,56 @@ async def test_update_pull_refuses_someone_elses_pull(monkeypatch: Any):
         await server.update_pull(
             pull="at://did:plc:other/sh.tangled.repo.pull/3abc", edits=[]
         )
+
+
+async def test_get_pull_patch_returns_latest_round(monkeypatch: Any):
+    import gzip
+
+    from tangled_mcp import records, server
+
+    pull = "at://did:plc:author/sh.tangled.repo.pull/3abc"
+
+    async def fake_get_record(uri: str) -> dict[str, Any]:
+        assert uri == pull
+        return {
+            "value": {
+                "rounds": [
+                    {"patchBlob": {"ref": {"$link": "old"}}},
+                    {"patchBlob": {"ref": {"$link": "newest"}}},
+                ]
+            }
+        }
+
+    async def fake_discover_pds(did: str) -> str:
+        assert did == "did:plc:author"
+        return "https://pds.example"
+
+    fetched: dict[str, Any] = {}
+
+    class FakeResponse:
+        content = gzip.compress(b"From abc123 Mon Sep 17 00:00:00 2001\n")
+
+        def raise_for_status(self) -> None:
+            pass
+
+    class FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            pass
+
+        async def get(self, url: str, params: dict[str, str]) -> FakeResponse:
+            fetched.update(params)
+            return FakeResponse()
+
+    monkeypatch.setattr(server.bobbin, "get_record", fake_get_record)
+    monkeypatch.setattr(records, "discover_pds", fake_discover_pds)
+    monkeypatch.setattr(server.httpx, "AsyncClient", FakeClient)
+
+    patch = await server.get_pull_patch(pull)
+    assert patch.startswith("From abc123")
+    assert fetched == {"did": "did:plc:author", "cid": "newest"}

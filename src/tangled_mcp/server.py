@@ -588,6 +588,21 @@ async def _pull_round_patch(pull_value: dict[str, Any], author_did: str) -> str:
 
 
 @tangled_mcp.tool
+async def get_pull_patch(
+    pull: Annotated[
+        str,
+        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
+    ],
+) -> str:
+    """the pull request's latest round as git format-patch text — the whole
+    change against the target branch, every file. read this to review a pull;
+    get_pull_file is for one file's resulting content."""
+    author = pull.removeprefix("at://").split("/")[0]
+    record = await bobbin.get_record(pull)
+    return await _pull_round_patch(record.get("value") or {}, author)
+
+
+@tangled_mcp.tool
 async def get_pull_file(
     pull: Annotated[
         str,
