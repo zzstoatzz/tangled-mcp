@@ -83,3 +83,36 @@ def test_apply_to_file_handles_no_trailing_newline_and_new_files():
     )
     assert apply_to_file(patch, "a.md", "x\ny\n") == "x\nz"
     assert apply_to_file(patch, "b.md", "") == "new\n"
+
+
+def test_apply_to_file_keeps_the_newline_of_a_sections_last_line():
+    """a hunk that ends on a blank context line is " \\n"; slicing the
+    section at the next `diff --git` used to drop that newline, so the
+    line read as " " and never matched the file (phi hit this reviewing
+    a real pull)."""
+    from tangled_mcp.patch import apply_to_file, synthesize
+
+    old = "x\n\n\n"
+    new = "y\n\n\n"
+    patch = synthesize("t", "phi", [("a.txt", old, new), ("b.txt", None, "n\n")])
+    assert apply_to_file(patch, "a.txt", old) == new
+
+
+def test_apply_to_file_applies_every_commit_of_a_series(repo: Path):
+    """a round can be a multi-commit format-patch; the file as the round
+    leaves it is every commit's diff of that path applied in order, not
+    just the first."""
+    from tangled_mcp.patch import apply_to_file
+
+    (repo / "f.txt").write_text("one\ntwo\n")
+    _git(repo, "add", "f.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD").strip()
+    (repo / "f.txt").write_text("one\nTWO\n")
+    _git(repo, "commit", "-q", "-am", "first")
+    (repo / "f.txt").write_text("ONE\nTWO\n")
+    _git(repo, "commit", "-q", "-am", "second")
+    series = _git(repo, "format-patch", f"{base}..HEAD", "--stdout")
+    assert series.count("diff --git a/f.txt") == 2
+
+    assert apply_to_file(series, "f.txt", "one\ntwo\n") == "ONE\nTWO\n"

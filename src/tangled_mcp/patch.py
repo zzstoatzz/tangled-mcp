@@ -83,11 +83,25 @@ def apply_to_file(patch_text: str, path: str, base: str) -> str | None:
     than guessing.
     """
     marker = f"diff --git a/{path} b/{path}\n"
+    sections = []
     start = patch_text.find(marker)
-    if start < 0:
+    while start >= 0:
+        end = patch_text.find("\ndiff --git ", start + 1)
+        # keep the newline that ends the section's last line: a hunk that
+        # ends on a blank context line is " \n", and without it the line
+        # reads as " " and never matches the file
+        sections.append(patch_text[start : end + 1 if end >= 0 else len(patch_text)])
+        start = patch_text.find(marker, start + 1)
+    if not sections:
         return None
-    end = patch_text.find("\ndiff --git ", start + 1)
-    section = patch_text[start : end if end >= 0 else len(patch_text)]
+    content: str | None = base
+    for section in sections:
+        content = _apply_section(section, path, content or "")
+    return content
+
+
+def _apply_section(section: str, path: str, base: str) -> str:
+    """one file section (one commit's diff of *path*) applied to *base*."""
     if "deleted file mode" in section.split("@@", 1)[0]:
         return ""
     old_lines = base.splitlines(keepends=True)
