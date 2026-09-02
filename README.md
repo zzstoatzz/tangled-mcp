@@ -4,7 +4,7 @@ MCP server for [Tangled](https://tangled.org) - a git collaboration platform bui
 
 reads go through [bobbin](https://docs.tangled.org/bobbin.html), tangled's public XRPC API (`api.tangled.org`) — **no credentials needed**. writes (issues, comments, labels) are atproto records put directly on your PDS and require an app password.
 
-> **note**: this repository is mirrored to [GitHub](https://github.com/zzstoatzz/tangled-mcp) for deployment via [FastMCP Cloud](https://fastmcp.cloud).
+> **note**: pushes to `main` deploy the hosted server through tangled CI, which uploads the source to [Prefect Horizon](https://horizon.prefect.io) (`scripts/horizon_deploy.py`). the [GitHub mirror](https://github.com/zzstoatzz/tangled-mcp) only publishes releases to PyPI and the MCP registry on `v*` tags.
 
 ## hosted server
 

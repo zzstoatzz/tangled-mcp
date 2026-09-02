@@ -11,7 +11,6 @@ test:
 check:
     uv run pre-commit run --all-files
 
-# push main to both remotes (tangled origin + github mirror → fastmcp cloud deploy)
+# push main; tangled CI deploys the hosted server from the pushed source (.tangled/workflows/deploy.yml)
 push:
     git push origin main
-    git push https://github.com/zzstoatzz/tangled-mcp.git main

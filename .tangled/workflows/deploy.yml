@@ -1,0 +1,25 @@
+when:
+  - event: push
+    branch: main
+
+engine: nixery
+
+dependencies:
+  nixpkgs:
+    - uv
+    - python312
+
+steps:
+  - name: test
+    command: |
+      uv sync --frozen
+      uv run pytest -q
+
+  # the hosted server at nate-tangled-mcp.fastmcp.app is a Prefect Horizon
+  # project. CI uploads this checkout as a source archive and Horizon builds
+  # and deploys those bytes; no git host is involved, so the tangled push is
+  # the deploy. HORIZON_API_KEY is a spindle secret for this repository.
+  - name: deploy to horizon
+    command: |
+      test -n "$HORIZON_API_KEY"
+      uv run --no-project python scripts/horizon_deploy.py
