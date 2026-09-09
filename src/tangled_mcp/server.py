@@ -137,8 +137,8 @@ async def list_repos(
 async def get_repo(repo: RepoParam) -> dict[str, Any]:
     """get repository metadata: knot, default branch, languages, labels"""
     r = await bobbin.resolve_repo(repo)
-    default_branch = await bobbin.query("sh.tangled.repo.getDefaultBranch", repo=r.uri)
-    languages = await bobbin.query("sh.tangled.repo.languages", repo=r.uri)
+    default_branch = await bobbin.repo_query(r, "sh.tangled.repo.getDefaultBranch")
+    languages = await bobbin.repo_query(r, "sh.tangled.repo.languages")
     return {
         "name": r.name,
         "uri": r.uri,

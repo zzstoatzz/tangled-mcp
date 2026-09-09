@@ -1,10 +1,17 @@
 from typing import Any
 
+import httpx
 import pytest
 
 from tangled_mcp import bobbin
 from tangled_mcp.records import tid
-from tangled_mcp.server import _issue_view, _pull_view, _resolve_labels, tangled_mcp
+from tangled_mcp.server import (
+    _issue_view,
+    _pull_view,
+    _resolve_labels,
+    get_repo,
+    tangled_mcp,
+)
 
 REPO_RECORD = {
     "uri": "at://did:plc:owner/sh.tangled.repo/myrepo",
@@ -141,6 +148,33 @@ async def test_resolve_repo_did_owner_uses_lookup_path(
 async def test_resolve_repo_rejects_bad_format():
     with pytest.raises(ValueError, match="owner/repo"):
         await bobbin.resolve_repo("just-a-name")
+
+
+@pytest.mark.parametrize("record", [REPO_RECORD, LEGACY_RECORD])
+@pytest.mark.parametrize("proxy_status", [404, 429])
+async def test_get_repo_reads_git_metadata_from_knot(monkeypatch, record, proxy_status):
+    """A working knot must remain readable when Bobbin's Git proxy fails."""
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        nsid = request.url.path.rsplit("/", 1)[-1]
+        if nsid == "sh.tangled.repo.getRepo":
+            return httpx.Response(200, json=record)
+        if request.url.host != record["value"]["knot"]:
+            return httpx.Response(proxy_status, json={"error": "RepoNotFound"})
+        assert request.url.params["repo"] == record["value"]["repoDid"]
+        if nsid == "sh.tangled.repo.getDefaultBranch":
+            return httpx.Response(200, json={"name": "trunk"})
+        assert nsid == "sh.tangled.repo.languages"
+        return httpx.Response(
+            200, json={"languages": [{"name": "Python", "percentage": 100}]}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(bobbin, "_client", client)
+        result = await get_repo(record["uri"])
+    assert result["default_branch"] == "trunk"
+    assert result["languages"] == {"Python": 100}
+    assert result["repo_did"] == record["value"]["repoDid"]
 
 
 def test_issue_view():
