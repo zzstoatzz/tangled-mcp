@@ -5,6 +5,7 @@ records put directly on the user's PDS.
 """
 
 import gzip
+import re
 from typing import Annotated, Any, Literal
 
 import httpx
@@ -323,6 +324,7 @@ async def get_pull(
     target = value.get("target") or {}
     return {
         "uri": pull,
+        "cid": record.get("cid"),
         "title": value.get("title"),
         "body": value.get("body"),
         "state": state,
@@ -593,12 +595,18 @@ async def get_pull_patch(
         str,
         Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
     ],
+    expected_cid: Annotated[
+        str | None,
+        Field(description="Pull record CID captured before review; reject if changed"),
+    ] = None,
 ) -> str:
     """the pull request's latest round as git format-patch text — the whole
     change against the target branch, every file. read this to review a pull;
     get_pull_file is for one file's resulting content."""
     author = pull.removeprefix("at://").split("/")[0]
     record = await bobbin.get_record(pull)
+    if expected_cid is not None and record.get("cid") != expected_cid:
+        raise ValueError("Pull changed; fetch and review the new revision")
     return await _pull_round_patch(record.get("value") or {}, author)
 
 
@@ -749,6 +757,10 @@ async def comment_on_pull(
         Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
     ],
     body: Annotated[str, Field(description="comment body (markdown)")],
+    expected_cid: Annotated[
+        str | None,
+        Field(description="CID of the pull revision reviewed; reject stale reviews"),
+    ] = None,
 ) -> dict[str, str]:
     """comment on a pull request — the record lands in your repo, pointing at the pull.
 
@@ -756,14 +768,24 @@ async def comment_on_pull(
     strong ref (the pull's uri + cid) and a markdown body object. The legacy
     sh.tangled.repo.pull.comment is not rendered on the pull page any more.
     """
+    if (
+        re.search(r"VERDICT:\s*(approve|request-changes|escalate)", body, re.IGNORECASE)
+        and not expected_cid
+    ):
+        raise ValueError("Review verdicts require the CID of the revision reviewed")
     target = await bobbin.get_record(pull)
+    if expected_cid is not None and target.get("cid") != expected_cid:
+        raise ValueError(
+            "Pull changed; fetch and review the new revision before commenting"
+        )
+    rounds = (target.get("value") or {}).get("rounds") or []
     session = await records.login()
     try:
         record = {
             "$type": records.FEED_COMMENT,
             "subject": {"uri": pull, "cid": target.get("cid")},
             "body": {"$type": records.MARKDOWN, "text": body, "original": body},
-            "pullRoundIdx": 0,
+            "pullRoundIdx": max(len(rounds) - 1, 0),
             "createdAt": records.now(),
         }
         result = await session.put_record(records.FEED_COMMENT, records.tid(), record)

@@ -507,7 +507,8 @@ async def test_default_branch_survives_bobbin_rate_limit(monkeypatch: Any):
     assert await server._default_branch(repo) == "main"
 
 
-async def test_comment_on_pull_record_shape(monkeypatch: Any):
+@pytest.mark.parametrize("round_count", [1, 3])
+async def test_comment_on_pull_record_shape(monkeypatch: Any, round_count):
     from tangled_mcp import records, server
 
     put: dict[str, Any] = {}
@@ -530,11 +531,14 @@ async def test_comment_on_pull_record_shape(monkeypatch: Any):
     monkeypatch.setattr(records, "login", fake_login)
 
     async def fake_get_record(uri: str) -> dict[str, Any]:
-        return {"uri": uri, "cid": "bafypull", "value": {}}
+        return {"uri": uri, "cid": "bafypull", "value": {"rounds": [{}] * round_count}}
 
     monkeypatch.setattr(server.bobbin, "get_record", fake_get_record)
     pull = "at://did:plc:phi/sh.tangled.repo.pull/3abc"
-    result = await server.comment_on_pull(pull=pull, body="2/10")
+    result = await server.comment_on_pull(
+        pull=pull, body="2/10", expected_cid="bafypull"
+    )
+    assert put["record"]["pullRoundIdx"] == round_count - 1
     assert put["collection"] == "sh.tangled.feed.comment"
     assert put["record"]["subject"] == {"uri": pull, "cid": "bafypull"}
     assert put["record"]["body"]["text"] == "2/10"
@@ -702,3 +706,70 @@ async def test_get_pull_patch_returns_latest_round(monkeypatch: Any):
     patch = await server.get_pull_patch(pull)
     assert patch.startswith("From abc123")
     assert fetched == {"did": "did:plc:author", "cid": "newest"}
+
+
+async def test_stale_review_rejected_before_login(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from tangled_mcp import records, server
+
+    login = AsyncMock()
+    monkeypatch.setattr(records, "login", login)
+    monkeypatch.setattr(
+        server.bobbin,
+        "get_record",
+        AsyncMock(return_value={"cid": "new", "value": {"rounds": [{}, {}]}}),
+    )
+    with pytest.raises(ValueError, match="Pull changed"):
+        await server.comment_on_pull(
+            pull="at://did:plc:test/sh.tangled.repo.pull/test",
+            body="VERDICT: approve",
+            expected_cid="old",
+        )
+    login.assert_not_awaited()
+    with pytest.raises(ValueError, match="Pull changed"):
+        await server.get_pull_patch(
+            pull="at://did:plc:test/sh.tangled.repo.pull/test", expected_cid="old"
+        )
+
+
+async def test_verdict_requires_revision_identity(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from tangled_mcp import records, server
+
+    login = AsyncMock()
+    monkeypatch.setattr(records, "login", login)
+    with pytest.raises(ValueError, match="require the CID"):
+        await server.comment_on_pull(
+            pull="at://did:plc:test/sh.tangled.repo.pull/test", body="VERDICT: approve"
+        )
+    login.assert_not_awaited()
+
+
+async def test_revision_between_patch_read_and_verdict_rejects_comment(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from tangled_mcp import records, server
+
+    pull = "at://did:plc:test/sh.tangled.repo.pull/test"
+    reviewed = {"cid": "revision-one", "value": {"rounds": [{"patchBlob": {}}]}}
+    revised = {"cid": "revision-two", "value": {"rounds": [{}, {}]}}
+    monkeypatch.setattr(
+        server.bobbin, "get_record", AsyncMock(side_effect=[reviewed, revised])
+    )
+    patch = AsyncMock(return_value="the first revision patch")
+    monkeypatch.setattr(server, "_pull_round_patch", patch)
+    login = AsyncMock()
+    monkeypatch.setattr(records, "login", login)
+
+    assert (
+        await server.get_pull_patch(pull, expected_cid="revision-one")
+        == "the first revision patch"
+    )
+    patch.assert_awaited_once_with(reviewed["value"], "did:plc:test")
+    with pytest.raises(ValueError, match="Pull changed"):
+        await server.comment_on_pull(
+            pull, "VERDICT: approve", expected_cid="revision-one"
+        )
+    login.assert_not_awaited()
