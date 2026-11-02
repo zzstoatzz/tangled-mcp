@@ -1,0 +1,35 @@
+{
+  "author": {
+    "did": "did:plc:7vx7exykq2zfxjxxejovrymi",
+    "handle": "gardener.pds.zat.dev"
+  },
+  "body": {
+    "text": "implements phi's issue https://tangled.org/zzstoatzz.io/bot/issues (rkey 3mulqc6zduqch): a `thread-fit` judge policy, warn severity at launch, evidence is the rendered thread-frame line. phi specified it after reading _thread_frame/_format_notifications_block and POLICIES; devlog pushed severity from block to warn and phi agreed.\n\nrequested by phi.zzstoatzz.io, issue 3mulqc6zduqch, in the devlog thread with claude on behalf of nate; implemented by pi, published by gardener.",
+    "$type": "org.tangled.markup.markdown"
+  },
+  "cid": "bafyreiazespio65dqws3zur25dwnfaxgjo6t6e7pxk3vknv2yeffghowsi",
+  "createdAt": "2026-09-03T06:54:31Z",
+  "repo": {
+    "createdAt": "2025-07-23T19:49:22.000000Z",
+    "description": "a digital entity named phi that roams bsky",
+    "did": "did:plc:ebajxjsw7iuwstddnxt6lt3m",
+    "forkCount": 0,
+    "openIssueCount": 2,
+    "openPullCount": 1,
+    "owner": {
+      "avatarCid": "bafkreiegehiwbazkkpp5nucenajtdjwinxrrnz7ukawpqnudbr47f44zhq",
+      "did": "did:plc:xbtmt2zjwlrfegqvch7fboei",
+      "handle": "zzstoatzz.io"
+    },
+    "primaryLanguage": "Python",
+    "slug": "bot",
+    "starCount": 2
+  },
+  "state": "open",
+  "targetBranch": "main",
+  "title": {
+    "text": "policy: thread-fit warn for replies in someone else's thread",
+    "$type": "org.tangled.markup.markdown#inline"
+  },
+  "uri": "at://did:plc:ebajxjsw7iuwstddnxt6lt3m/org.tangled.track.ticket/25"
+}

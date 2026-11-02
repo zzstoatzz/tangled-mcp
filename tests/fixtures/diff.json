@@ -1,0 +1,1783 @@
+{
+  "diffs": [
+    {
+      "lhsSrc": {
+        "path": "CHANGELOG.md",
+        "oid": "dc436669d1bf1e2c521a1e8ddfc7352bc327e55e",
+        "size": 123182,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "CHANGELOG.md",
+        "oid": "bad5ee65120cf59d45406136e599e583d10d8225",
+        "size": 123540,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            21,
+            22,
+            23,
+            24,
+            25
+          ],
+          "lines": [
+            {
+              "lhs": 18,
+              "rhs": 18
+            },
+            {
+              "lhs": 19,
+              "rhs": 19
+            },
+            {
+              "lhs": 20,
+              "rhs": 20
+            },
+            {
+              "rhs": 21
+            },
+            {
+              "rhs": 22
+            },
+            {
+              "rhs": 23
+            },
+            {
+              "rhs": 24
+            },
+            {
+              "rhs": 25
+            },
+            {
+              "lhs": 21,
+              "rhs": 26
+            },
+            {
+              "lhs": 22,
+              "rhs": 27
+            },
+            {
+              "lhs": 23,
+              "rhs": 28
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "tests/test_encounter_recovery.py",
+        "oid": "d7274fa20865e2a77cffd3f61199a239c6856278",
+        "size": 3356,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "tests/test_encounter_recovery.py",
+        "oid": "b406b482b83ce0ca96f8553fb0247697dac73103",
+        "size": 5612,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            40
+          ],
+          "lines": [
+            {
+              "lhs": 23,
+              "rhs": 23
+            },
+            {
+              "lhs": 24,
+              "rhs": 24
+            },
+            {
+              "lhs": 25,
+              "rhs": 25
+            },
+            {
+              "rhs": 26
+            },
+            {
+              "rhs": 27
+            },
+            {
+              "rhs": 28
+            },
+            {
+              "rhs": 29
+            },
+            {
+              "rhs": 30
+            },
+            {
+              "rhs": 31
+            },
+            {
+              "rhs": 32
+            },
+            {
+              "rhs": 33
+            },
+            {
+              "rhs": 34
+            },
+            {
+              "rhs": 35
+            },
+            {
+              "rhs": 36
+            },
+            {
+              "rhs": 37
+            },
+            {
+              "lhs": 26,
+              "rhs": 38
+            },
+            {
+              "lhs": 27,
+              "rhs": 39
+            },
+            {
+              "rhs": 40
+            },
+            {
+              "lhs": 28,
+              "rhs": 41
+            },
+            {
+              "lhs": 29,
+              "rhs": 42
+            },
+            {
+              "lhs": 30,
+              "rhs": 43
+            }
+          ]
+        },
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116,
+            117,
+            118,
+            119,
+            120,
+            121,
+            122,
+            123,
+            124,
+            125,
+            126,
+            127,
+            128,
+            129,
+            130,
+            131,
+            132,
+            133,
+            134,
+            135,
+            136,
+            137
+          ],
+          "lines": [
+            {
+              "lhs": 83,
+              "rhs": 96
+            },
+            {
+              "lhs": 84,
+              "rhs": 97
+            },
+            {
+              "lhs": 85,
+              "rhs": 98
+            },
+            {
+              "rhs": 99
+            },
+            {
+              "rhs": 100
+            },
+            {
+              "rhs": 101
+            },
+            {
+              "rhs": 102
+            },
+            {
+              "rhs": 103
+            },
+            {
+              "rhs": 104
+            },
+            {
+              "rhs": 105
+            },
+            {
+              "rhs": 106
+            },
+            {
+              "rhs": 107
+            },
+            {
+              "rhs": 108
+            },
+            {
+              "rhs": 109
+            },
+            {
+              "rhs": 110
+            },
+            {
+              "rhs": 111
+            },
+            {
+              "rhs": 112
+            },
+            {
+              "rhs": 113
+            },
+            {
+              "rhs": 114
+            },
+            {
+              "rhs": 115
+            },
+            {
+              "rhs": 116
+            },
+            {
+              "rhs": 117
+            },
+            {
+              "rhs": 118
+            },
+            {
+              "rhs": 119
+            },
+            {
+              "rhs": 120
+            },
+            {
+              "rhs": 121
+            },
+            {
+              "rhs": 122
+            },
+            {
+              "rhs": 123
+            },
+            {
+              "rhs": 124
+            },
+            {
+              "rhs": 125
+            },
+            {
+              "rhs": 126
+            },
+            {
+              "rhs": 127
+            },
+            {
+              "rhs": 128
+            },
+            {
+              "rhs": 129
+            },
+            {
+              "rhs": 130
+            },
+            {
+              "rhs": 131
+            },
+            {
+              "rhs": 132
+            },
+            {
+              "rhs": 133
+            },
+            {
+              "rhs": 134
+            },
+            {
+              "rhs": 135
+            },
+            {
+              "rhs": 136
+            },
+            {
+              "rhs": 137
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "tests/test_mcp_offered.py",
+        "oid": "4c73c7f994fdfba16d54676bd25c2b609d59d6a1",
+        "size": 6030,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "tests/test_mcp_offered.py",
+        "oid": "13ea4003389960455cb28b1f86439ad4a8d7b7a8",
+        "size": 6577,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            7
+          ],
+          "lines": [
+            {
+              "lhs": 4,
+              "rhs": 4
+            },
+            {
+              "lhs": 5,
+              "rhs": 5
+            },
+            {
+              "lhs": 6,
+              "rhs": 6
+            },
+            {
+              "rhs": 7
+            },
+            {
+              "lhs": 7,
+              "rhs": 8
+            },
+            {
+              "lhs": 8,
+              "rhs": 9
+            },
+            {
+              "lhs": 9,
+              "rhs": 10
+            }
+          ]
+        },
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            169,
+            170,
+            171,
+            172,
+            173,
+            174,
+            175,
+            176,
+            177,
+            178,
+            179,
+            180
+          ],
+          "lines": [
+            {
+              "lhs": 165,
+              "rhs": 166
+            },
+            {
+              "lhs": 166,
+              "rhs": 167
+            },
+            {
+              "lhs": 167,
+              "rhs": 168
+            },
+            {
+              "rhs": 169
+            },
+            {
+              "rhs": 170
+            },
+            {
+              "rhs": 171
+            },
+            {
+              "rhs": 172
+            },
+            {
+              "rhs": 173
+            },
+            {
+              "rhs": 174
+            },
+            {
+              "rhs": 175
+            },
+            {
+              "rhs": 176
+            },
+            {
+              "rhs": 177
+            },
+            {
+              "rhs": 178
+            },
+            {
+              "rhs": 179
+            },
+            {
+              "rhs": 180
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "tests/test_notification_history.py",
+        "oid": "8513f56379afb485ced69d576213d23a7ecf099e",
+        "size": 5500,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "tests/test_notification_history.py",
+        "oid": "4ba4683e246969ae55d00ae6f9cd06e724393c86",
+        "size": 5571,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [
+            14
+          ],
+          "novelRhs": [
+            14
+          ],
+          "lines": [
+            {
+              "lhs": 11,
+              "rhs": 11
+            },
+            {
+              "lhs": 12,
+              "rhs": 12
+            },
+            {
+              "lhs": 13,
+              "rhs": 13
+            },
+            {
+              "lhs": 14
+            },
+            {
+              "rhs": 14
+            },
+            {
+              "lhs": 15,
+              "rhs": 15
+            },
+            {
+              "lhs": 16,
+              "rhs": 16
+            },
+            {
+              "lhs": 17,
+              "rhs": 17
+            }
+          ]
+        },
+        {
+          "novelLhs": [
+            24
+          ],
+          "novelRhs": [
+            24
+          ],
+          "lines": [
+            {
+              "lhs": 21,
+              "rhs": 21
+            },
+            {
+              "lhs": 22,
+              "rhs": 22
+            },
+            {
+              "lhs": 23,
+              "rhs": 23
+            },
+            {
+              "lhs": 24
+            },
+            {
+              "rhs": 24
+            },
+            {
+              "lhs": 25,
+              "rhs": 25
+            },
+            {
+              "lhs": 26,
+              "rhs": 26
+            },
+            {
+              "lhs": 27,
+              "rhs": 27
+            }
+          ]
+        },
+        {
+          "novelLhs": [
+            109
+          ],
+          "novelRhs": [
+            109,
+            110,
+            111,
+            112
+          ],
+          "lines": [
+            {
+              "lhs": 106,
+              "rhs": 106
+            },
+            {
+              "lhs": 107,
+              "rhs": 107
+            },
+            {
+              "lhs": 108,
+              "rhs": 108
+            },
+            {
+              "lhs": 109
+            },
+            {
+              "rhs": 109
+            },
+            {
+              "rhs": 110
+            },
+            {
+              "rhs": 111
+            },
+            {
+              "rhs": 112
+            },
+            {
+              "lhs": 110,
+              "rhs": 113
+            },
+            {
+              "lhs": 111,
+              "rhs": 114
+            },
+            {
+              "lhs": 112,
+              "rhs": 115
+            }
+          ]
+        },
+        {
+          "novelLhs": [
+            137
+          ],
+          "novelRhs": [
+            140,
+            141,
+            142,
+            143,
+            144
+          ],
+          "lines": [
+            {
+              "lhs": 134,
+              "rhs": 137
+            },
+            {
+              "lhs": 135,
+              "rhs": 138
+            },
+            {
+              "lhs": 136,
+              "rhs": 139
+            },
+            {
+              "lhs": 137
+            },
+            {
+              "rhs": 140
+            },
+            {
+              "rhs": 141
+            },
+            {
+              "rhs": 142
+            },
+            {
+              "rhs": 143
+            },
+            {
+              "rhs": 144
+            },
+            {
+              "lhs": 138,
+              "rhs": 145
+            },
+            {
+              "lhs": 139,
+              "rhs": 146
+            },
+            {
+              "lhs": 140,
+              "rhs": 147
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "skills/self-traces/SKILL.md",
+        "oid": "da7ef1c16a5c59167773333bd13ab8e615ba8cab",
+        "size": 7029,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "skills/self-traces/SKILL.md",
+        "oid": "6101e84e89a740af37aafe7ac0077ea082f9b849",
+        "size": 7222,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [
+            70,
+            71,
+            72
+          ],
+          "novelRhs": [
+            70,
+            71,
+            72,
+            73,
+            74,
+            75
+          ],
+          "lines": [
+            {
+              "lhs": 67,
+              "rhs": 67
+            },
+            {
+              "lhs": 68,
+              "rhs": 68
+            },
+            {
+              "lhs": 69,
+              "rhs": 69
+            },
+            {
+              "lhs": 70
+            },
+            {
+              "lhs": 71
+            },
+            {
+              "lhs": 72
+            },
+            {
+              "rhs": 70
+            },
+            {
+              "rhs": 71
+            },
+            {
+              "rhs": 72
+            },
+            {
+              "rhs": 73
+            },
+            {
+              "rhs": 74
+            },
+            {
+              "rhs": 75
+            },
+            {
+              "lhs": 73,
+              "rhs": 76
+            },
+            {
+              "lhs": 74,
+              "rhs": 77
+            },
+            {
+              "lhs": 75,
+              "rhs": 78
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "src/bot/main.py",
+        "oid": "dc9cae5f70c208b095dc414a1ef8d98382ea9c30",
+        "size": 35338,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "src/bot/main.py",
+        "oid": "b4e6ed0b027d00654dd72e1015508d8a261b3497",
+        "size": 35344,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [
+            368
+          ],
+          "novelRhs": [
+            368
+          ],
+          "lines": [
+            {
+              "lhs": 365,
+              "rhs": 365
+            },
+            {
+              "lhs": 366,
+              "rhs": 366
+            },
+            {
+              "lhs": 367,
+              "rhs": 367
+            },
+            {
+              "lhs": 368
+            },
+            {
+              "rhs": 368
+            },
+            {
+              "lhs": 369,
+              "rhs": 369
+            },
+            {
+              "lhs": 370,
+              "rhs": 370
+            },
+            {
+              "lhs": 371,
+              "rhs": 371
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": ".agents/skills/phi-check/SKILL.md",
+        "oid": "f9878d0f81bb9dc10192fc6b7e25d3ef9d43e045",
+        "size": 4810,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": ".agents/skills/phi-check/SKILL.md",
+        "oid": "fad3a799fb5d3f346f2e1a4b980564d6d4b63424",
+        "size": 4810,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [
+            66
+          ],
+          "novelRhs": [
+            66
+          ],
+          "lines": [
+            {
+              "lhs": 63,
+              "rhs": 63
+            },
+            {
+              "lhs": 64,
+              "rhs": 64
+            },
+            {
+              "lhs": 65,
+              "rhs": 65
+            },
+            {
+              "lhs": 66
+            },
+            {
+              "rhs": 66
+            },
+            {
+              "lhs": 67,
+              "rhs": 67
+            },
+            {
+              "lhs": 68,
+              "rhs": 68
+            },
+            {
+              "lhs": 69,
+              "rhs": 69
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "src/bot/core/cache_stability.py",
+        "oid": "54e6a17c35ad56eae64a41bb20c9af80c77ff7cc",
+        "size": 19961,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "src/bot/core/cache_stability.py",
+        "oid": "54b3cc177cf9ec8c1932dc06738ba054709b94f1",
+        "size": 19948,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [
+            36
+          ],
+          "novelRhs": [
+            36
+          ],
+          "lines": [
+            {
+              "lhs": 33,
+              "rhs": 33
+            },
+            {
+              "lhs": 34,
+              "rhs": 34
+            },
+            {
+              "lhs": 35,
+              "rhs": 35
+            },
+            {
+              "lhs": 36
+            },
+            {
+              "rhs": 36
+            },
+            {
+              "lhs": 37,
+              "rhs": 37
+            },
+            {
+              "lhs": 38,
+              "rhs": 38
+            },
+            {
+              "lhs": 39,
+              "rhs": 39
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "src/bot/core/context_diagnostics.py",
+        "oid": "dc3e11aea8681948de70852c3bda22effb547447",
+        "size": 8413,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "src/bot/core/context_diagnostics.py",
+        "oid": "133ff584cb8aba649077f169b737c979787ec78d",
+        "size": 8507,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [
+            13
+          ],
+          "novelRhs": [
+            13
+          ],
+          "lines": [
+            {
+              "lhs": 10,
+              "rhs": 10
+            },
+            {
+              "lhs": 11,
+              "rhs": 11
+            },
+            {
+              "lhs": 12,
+              "rhs": 12
+            },
+            {
+              "lhs": 13
+            },
+            {
+              "rhs": 13
+            },
+            {
+              "lhs": 14,
+              "rhs": 14
+            },
+            {
+              "lhs": 15,
+              "rhs": 15
+            },
+            {
+              "lhs": 16,
+              "rhs": 16
+            }
+          ]
+        },
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            76,
+            77,
+            78,
+            79,
+            80
+          ],
+          "lines": [
+            {
+              "lhs": 73,
+              "rhs": 73
+            },
+            {
+              "lhs": 74,
+              "rhs": 74
+            },
+            {
+              "lhs": 75,
+              "rhs": 75
+            },
+            {
+              "rhs": 76
+            },
+            {
+              "rhs": 77
+            },
+            {
+              "rhs": 78
+            },
+            {
+              "rhs": 79
+            },
+            {
+              "rhs": 80
+            },
+            {
+              "lhs": 76,
+              "rhs": 81
+            },
+            {
+              "lhs": 77,
+              "rhs": 82
+            },
+            {
+              "lhs": 78,
+              "rhs": 83
+            }
+          ]
+        },
+        {
+          "novelLhs": [
+            92,
+            93
+          ],
+          "novelRhs": [
+            97,
+            98,
+            99
+          ],
+          "lines": [
+            {
+              "lhs": 89,
+              "rhs": 94
+            },
+            {
+              "lhs": 90,
+              "rhs": 95
+            },
+            {
+              "lhs": 91,
+              "rhs": 96
+            },
+            {
+              "lhs": 92
+            },
+            {
+              "lhs": 93
+            },
+            {
+              "rhs": 97
+            },
+            {
+              "rhs": 98
+            },
+            {
+              "rhs": 99
+            },
+            {
+              "lhs": 94,
+              "rhs": 100
+            },
+            {
+              "lhs": 95,
+              "rhs": 101
+            },
+            {
+              "lhs": 96,
+              "rhs": 102
+            }
+          ]
+        },
+        {
+          "novelLhs": [
+            182,
+            183
+          ],
+          "novelRhs": [
+            188
+          ],
+          "lines": [
+            {
+              "lhs": 179,
+              "rhs": 185
+            },
+            {
+              "lhs": 180,
+              "rhs": 186
+            },
+            {
+              "lhs": 181,
+              "rhs": 187
+            },
+            {
+              "lhs": 182
+            },
+            {
+              "lhs": 183
+            },
+            {
+              "rhs": 188
+            },
+            {
+              "lhs": 184,
+              "rhs": 189
+            },
+            {
+              "lhs": 185,
+              "rhs": 190
+            },
+            {
+              "lhs": 186,
+              "rhs": 191
+            }
+          ]
+        },
+        {
+          "novelLhs": [
+            194
+          ],
+          "novelRhs": [
+            199
+          ],
+          "lines": [
+            {
+              "lhs": 191,
+              "rhs": 196
+            },
+            {
+              "lhs": 192,
+              "rhs": 197
+            },
+            {
+              "lhs": 193,
+              "rhs": 198
+            },
+            {
+              "lhs": 194
+            },
+            {
+              "rhs": 199
+            },
+            {
+              "lhs": 195,
+              "rhs": 200
+            },
+            {
+              "lhs": 196,
+              "rhs": 201
+            },
+            {
+              "lhs": 197,
+              "rhs": 202
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "src/bot/core/mcp_tools.py",
+        "oid": "f43239310498c9a38dcf2e6bf35d6a3131396b01",
+        "size": 8853,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "src/bot/core/mcp_tools.py",
+        "oid": "c73e727046ca31a2e71f99560f91f0e50d31bd89",
+        "size": 9038,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            148,
+            149,
+            150
+          ],
+          "lines": [
+            {
+              "lhs": 145,
+              "rhs": 145
+            },
+            {
+              "lhs": 146,
+              "rhs": 146
+            },
+            {
+              "lhs": 147,
+              "rhs": 147
+            },
+            {
+              "rhs": 148
+            },
+            {
+              "rhs": 149
+            },
+            {
+              "rhs": 150
+            },
+            {
+              "lhs": 148,
+              "rhs": 151
+            },
+            {
+              "lhs": 149,
+              "rhs": 152
+            },
+            {
+              "lhs": 150,
+              "rhs": 153
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "src/bot/services/encounter_recovery.py",
+        "oid": "207ed65d37b00375480ad5dbe295daa22b03ea1b",
+        "size": 2462,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "src/bot/services/encounter_recovery.py",
+        "oid": "5161d5b94334a87c081c608e6defe1c2803b7692",
+        "size": 3910,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [
+            3,
+            6,
+            9
+          ],
+          "novelRhs": [
+            3,
+            6,
+            9,
+            10,
+            11,
+            12,
+            13,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43
+          ],
+          "lines": [
+            {
+              "lhs": 0,
+              "rhs": 0
+            },
+            {
+              "lhs": 1,
+              "rhs": 1
+            },
+            {
+              "lhs": 2,
+              "rhs": 2
+            },
+            {
+              "lhs": 3
+            },
+            {
+              "rhs": 3
+            },
+            {
+              "lhs": 4,
+              "rhs": 4
+            },
+            {
+              "lhs": 5,
+              "rhs": 5
+            },
+            {
+              "lhs": 6
+            },
+            {
+              "rhs": 6
+            },
+            {
+              "lhs": 7,
+              "rhs": 7
+            },
+            {
+              "lhs": 8,
+              "rhs": 8
+            },
+            {
+              "lhs": 9
+            },
+            {
+              "rhs": 9
+            },
+            {
+              "rhs": 10
+            },
+            {
+              "rhs": 11
+            },
+            {
+              "rhs": 12
+            },
+            {
+              "rhs": 13
+            },
+            {
+              "lhs": 10,
+              "rhs": 14
+            },
+            {
+              "rhs": 15
+            },
+            {
+              "rhs": 16
+            },
+            {
+              "rhs": 17
+            },
+            {
+              "rhs": 18
+            },
+            {
+              "rhs": 19
+            },
+            {
+              "rhs": 20
+            },
+            {
+              "rhs": 21
+            },
+            {
+              "rhs": 22
+            },
+            {
+              "rhs": 23
+            },
+            {
+              "rhs": 24
+            },
+            {
+              "rhs": 25
+            },
+            {
+              "rhs": 26
+            },
+            {
+              "rhs": 27
+            },
+            {
+              "rhs": 28
+            },
+            {
+              "rhs": 29
+            },
+            {
+              "rhs": 30
+            },
+            {
+              "rhs": 31
+            },
+            {
+              "rhs": 32
+            },
+            {
+              "rhs": 33
+            },
+            {
+              "rhs": 34
+            },
+            {
+              "rhs": 35
+            },
+            {
+              "rhs": 36
+            },
+            {
+              "rhs": 37
+            },
+            {
+              "rhs": 38
+            },
+            {
+              "rhs": 39
+            },
+            {
+              "rhs": 40
+            },
+            {
+              "rhs": 41
+            },
+            {
+              "rhs": 42
+            },
+            {
+              "rhs": 43
+            },
+            {
+              "lhs": 11,
+              "rhs": 44
+            },
+            {
+              "lhs": 12,
+              "rhs": 45
+            },
+            {
+              "lhs": 13,
+              "rhs": 46
+            }
+          ]
+        },
+        {
+          "novelLhs": [
+            22,
+            23,
+            24
+          ],
+          "novelRhs": [
+            55,
+            56,
+            57,
+            58
+          ],
+          "lines": [
+            {
+              "lhs": 19,
+              "rhs": 52
+            },
+            {
+              "lhs": 20,
+              "rhs": 53
+            },
+            {
+              "lhs": 21,
+              "rhs": 54
+            },
+            {
+              "lhs": 22
+            },
+            {
+              "lhs": 23
+            },
+            {
+              "lhs": 24
+            },
+            {
+              "rhs": 55
+            },
+            {
+              "rhs": 56
+            },
+            {
+              "rhs": 57
+            },
+            {
+              "rhs": 58
+            },
+            {
+              "lhs": 25,
+              "rhs": 59
+            },
+            {
+              "lhs": 26,
+              "rhs": 60
+            },
+            {
+              "lhs": 27,
+              "rhs": 61
+            }
+          ]
+        },
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            72
+          ],
+          "lines": [
+            {
+              "lhs": 35,
+              "rhs": 69
+            },
+            {
+              "lhs": 36,
+              "rhs": 70
+            },
+            {
+              "lhs": 37,
+              "rhs": 71
+            },
+            {
+              "rhs": 72
+            },
+            {
+              "lhs": 38,
+              "rhs": 73
+            },
+            {
+              "lhs": 39,
+              "rhs": 74
+            },
+            {
+              "lhs": 40,
+              "rhs": 75
+            }
+          ]
+        },
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            81
+          ],
+          "lines": [
+            {
+              "lhs": 43,
+              "rhs": 78
+            },
+            {
+              "lhs": 44,
+              "rhs": 79
+            },
+            {
+              "lhs": 45,
+              "rhs": 80
+            },
+            {
+              "rhs": 81
+            },
+            {
+              "lhs": 46,
+              "rhs": 82
+            },
+            {
+              "lhs": 47,
+              "rhs": 83
+            },
+            {
+              "lhs": 48,
+              "rhs": 84
+            }
+          ]
+        },
+        {
+          "novelLhs": [],
+          "novelRhs": [
+            94,
+            95,
+            96,
+            97,
+            98
+          ],
+          "lines": [
+            {
+              "lhs": 55,
+              "rhs": 91
+            },
+            {
+              "lhs": 56,
+              "rhs": 92
+            },
+            {
+              "lhs": 57,
+              "rhs": 93
+            },
+            {
+              "rhs": 94
+            },
+            {
+              "rhs": 95
+            },
+            {
+              "rhs": 96
+            },
+            {
+              "rhs": 97
+            },
+            {
+              "rhs": 98
+            },
+            {
+              "lhs": 58,
+              "rhs": 99
+            },
+            {
+              "lhs": 59,
+              "rhs": 100
+            },
+            {
+              "lhs": 60,
+              "rhs": 101
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    },
+    {
+      "lhsSrc": {
+        "path": "src/bot/services/notification_poller.py",
+        "oid": "8a5b6ff377a53838865233d3da13ab08c0bcc88a",
+        "size": 24873,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "rhsSrc": {
+        "path": "src/bot/services/notification_poller.py",
+        "oid": "a660594e53d645ba540d98f5007098bd53d7f8c0",
+        "size": 24933,
+        "isBinary": false,
+        "isSubmodule": false
+      },
+      "hunks": [
+        {
+          "novelLhs": [
+            111
+          ],
+          "novelRhs": [
+            111,
+            112
+          ],
+          "lines": [
+            {
+              "lhs": 108,
+              "rhs": 108
+            },
+            {
+              "lhs": 109,
+              "rhs": 109
+            },
+            {
+              "lhs": 110,
+              "rhs": 110
+            },
+            {
+              "lhs": 111
+            },
+            {
+              "rhs": 111
+            },
+            {
+              "rhs": 112
+            },
+            {
+              "lhs": 112,
+              "rhs": 113
+            },
+            {
+              "lhs": 113,
+              "rhs": 114
+            },
+            {
+              "lhs": 114,
+              "rhs": 115
+            }
+          ]
+        },
+        {
+          "novelLhs": [
+            134,
+            135
+          ],
+          "novelRhs": [
+            135,
+            136
+          ],
+          "lines": [
+            {
+              "lhs": 131,
+              "rhs": 132
+            },
+            {
+              "lhs": 132,
+              "rhs": 133
+            },
+            {
+              "lhs": 133,
+              "rhs": 134
+            },
+            {
+              "lhs": 134
+            },
+            {
+              "lhs": 135
+            },
+            {
+              "rhs": 135
+            },
+            {
+              "rhs": 136
+            },
+            {
+              "lhs": 136,
+              "rhs": 137
+            },
+            {
+              "lhs": 137,
+              "rhs": 138
+            },
+            {
+              "lhs": 138,
+              "rhs": 139
+            }
+          ]
+        }
+      ],
+      "hasSyntacticChanges": true
+    }
+  ],
+  "stats": {
+    "insertions": 155,
+    "deletions": 25,
+    "filesChanged": 12
+  }
+}

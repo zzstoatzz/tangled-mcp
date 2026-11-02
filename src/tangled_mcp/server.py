@@ -1,11 +1,12 @@
 """tangled MCP server
 
-reads go through bobbin (api.tangled.org, no auth); writes are atproto
-records put directly on the user's PDS.
+reads go through bobbin (api.tangled.org) and the repo's knot, no auth.
+writes go to the repo's knot with a service-auth token from the caller's PDS.
 """
 
 import gzip
 import re
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
 import httpx
@@ -23,53 +24,91 @@ RepoParam = Annotated[
     str,
     Field(
         description="repository as 'owner/repo' (owner may be a handle or DID), "
-        "a repo record at-uri (as returned by search), or a bare repo DID"
+        "a bare repo DID, or a repo at-uri (as returned by search)"
     ),
 ]
 IssueParam = Annotated[
     str,
     Field(
-        description="issue at-uri (at://did/sh.tangled.repo.issue/rkey) or bare rkey"
+        description="issue at-uri (at://<repo did>/org.tangled.track.ticket/<number>) "
+        "or 'owner/repo#<number>'"
+    ),
+]
+PullParam = Annotated[
+    str,
+    Field(
+        description="pull request at-uri (at://<repo did>/org.tangled.track.ticket/"
+        "<number>), 'owner/repo#<number>', or a legacy sh.tangled.repo.pull at-uri"
     ),
 ]
 Limit = Annotated[int, Field(ge=1, le=100)]
 
+PULL_PATCH_ONLY = (
+    "tangled no longer accepts patch-only pull requests: a pull is a branch "
+    "pushed to a tangled repository (yours or a fork) plus a patch the knot "
+    "fetches from it. this server cannot push git, so opening or revising a pull "
+    "from edits is unavailable; comment the proposed change on an issue instead."
+)
 
-def _issue_view(item: dict[str, Any]) -> dict[str, Any]:
-    value = item.get("value") or {}
-    return {
+
+def _text(markup: Any) -> str | None:
+    if isinstance(markup, dict):
+        return markup.get("text")
+    return markup
+
+
+def _rkey(uri: str) -> str:
+    return uri.rsplit("/", 1)[-1]
+
+
+def _ticket_view(item: dict[str, Any]) -> dict[str, Any]:
+    value = item.get("value") or item
+    view = {
         "uri": item["uri"],
-        "title": value.get("title"),
-        "body": value.get("body"),
-        "state": item.get("state"),
+        "number": int(_rkey(item["uri"])),
+        "title": _text(value.get("title")),
+        "body": _text(value.get("body")),
+        "state": item.get("state") or value.get("state"),
         "comment_count": item.get("commentCount"),
         "created_at": value.get("createdAt"),
-        "author": item["uri"].removeprefix("at://").split("/")[0],
+        "author": _author(item),
     }
+    if value.get("targetBranch"):
+        view["target_branch"] = value["targetBranch"]
+    return view
 
 
-def _pull_view(item: dict[str, Any]) -> dict[str, Any]:
-    value = item.get("value") or {}
-    target, source = value.get("target") or {}, value.get("source") or {}
-    return {
-        "uri": item["uri"],
-        "title": value.get("title"),
-        "state": item.get("status") or item.get("state"),
-        "target_branch": target.get("branch"),
-        "source_branch": source.get("branch"),
-        "created_at": value.get("createdAt"),
-        "author": item["uri"].removeprefix("at://").split("/")[0],
-    }
+def _author(item: dict[str, Any]) -> str | None:
+    author = item.get("author")
+    if isinstance(author, dict):
+        return author.get("handle") or author.get("did")
+    return author or (item.get("value") or {}).get(records.EDITOR_FIELD)
 
 
-async def _issue_uri(issue: str) -> str:
-    if issue.startswith("at://"):
-        return issue
-    handle = records.resolve_credentials().handle
-    if not handle:
-        raise ValueError("bare rkey requires credentials; pass a full at-uri")
-    did = await bobbin.resolve_handle(handle)
-    return f"at://{did}/{records.ISSUE}/{issue}"
+async def _ticket(ref: str) -> tuple[bobbin.Repo, str]:
+    """an issue or pull reference as (repo, ticket number)"""
+    if ref.startswith("at://"):
+        did, collection, rkey = ref.removeprefix("at://").split("/", 2)
+        if collection != records.TICKET:
+            raise ValueError(
+                f"not a ticket uri: {ref}. issues and pulls are "
+                f"{records.TICKET} records on the repository since tangled's "
+                "org.tangled migration; find the current uri with list_issues "
+                "or list_pulls"
+            )
+        return await bobbin.resolve_repo(did), rkey
+    repo, sep, number = ref.rpartition("#")
+    if not sep or not number.isdigit():
+        raise ValueError(f"expected a ticket at-uri or 'owner/repo#<number>': {ref}")
+    return await bobbin.resolve_repo(repo), number
+
+
+def _ticket_uri(r: bobbin.Repo, number: str) -> str:
+    return f"at://{r.repo_did}/{records.TICKET}/{number}"
+
+
+def _repo_url(r: bobbin.Repo) -> str:
+    return f"{APPVIEW_URL}/{r.owner_did}/{r.name}"
 
 
 # --- discovery ---------------------------------------------------------------
@@ -81,17 +120,16 @@ async def search(
     limit: Limit = 20,
 ) -> list[dict[str, Any]]:
     """search tangled (repos, issues, pulls, strings) via full-text index"""
-    body = await bobbin.query("sh.tangled.search.query", q=query, limit=limit)
+    body = await bobbin.query("org.tangled.search.query", q=query, limit=limit)
     return [_search_hit(hit) for hit in body.get("hits") or []]
 
 
 def _search_hit(hit: dict[str, Any]) -> dict[str, Any]:
     value = hit.get("value") or {}
-    rkey = hit["uri"].rsplit("/", 1)[-1]
-    title = value.get("name") or value.get("title")
-    if not title and hit.get("nsid") == "sh.tangled.repo":
-        title = rkey  # new-style repo records carry their name in the rkey
-    snippet = value.get("description") or value.get("body") or value.get("contents")
+    title = _text(value.get("title")) or (value.get("declaration") or {}).get("name")
+    snippet = (
+        value.get("description") or _text(value.get("body")) or value.get("contents")
+    )
     return {
         "uri": hit["uri"],
         "type": hit.get("nsid"),
@@ -105,7 +143,7 @@ async def get_record(
     uri: Annotated[str, Field(description="at-uri of any public atproto record")],
 ) -> dict[str, Any]:
     """fetch the full record behind any at-uri (e.g. a string/paste, comment,
-    or anything surfaced by search) directly from its owner's PDS"""
+    or anything surfaced by search) from where its DID lives"""
     body = await bobbin.get_record(uri)
     return body.get("value") or {}
 
@@ -116,19 +154,19 @@ async def list_repos(
     limit: Limit = 50,
 ) -> list[dict[str, Any]]:
     """list repositories owned by a user"""
-    did = await bobbin.resolve_handle(owner.lstrip("@"))
-    body = await bobbin.query("sh.tangled.repo.listRepos", subject=did, limit=limit)
+    handle = owner.lstrip("@")
+    did = await bobbin.resolve_handle(handle)
+    body = await bobbin.query("org.tangled.repo.listRepos", subject=did, limit=limit)
     out = []
     for item in body.get("items") or []:
         value = item.get("value") or {}
-        name = value.get("name") or item["uri"].rsplit("/", 1)[-1]
+        name = (value.get("declaration") or {}).get("name")
         out.append(
             {
                 "name": name,
-                "uri": item["uri"],
-                "knot": value.get("knot"),
+                "repo_did": item["uri"].removeprefix("at://").split("/")[0],
                 "description": value.get("description"),
-                "url": f"{APPVIEW_URL}/@{owner.lstrip('@')}/{name}",
+                "url": f"{APPVIEW_URL}/{handle}/{name}",
             }
         )
     return out
@@ -138,37 +176,38 @@ async def list_repos(
 async def get_repo(repo: RepoParam) -> dict[str, Any]:
     """get repository metadata: knot, default branch, languages, labels"""
     r = await bobbin.resolve_repo(repo)
-    default_branch = await bobbin.repo_query(r, "sh.tangled.repo.getDefaultBranch")
-    languages = await bobbin.repo_query(r, "sh.tangled.repo.languages")
+    languages = await bobbin.git_query(r, "org.tangled.git.listLanguages")
+    labels = await bobbin.list_records(r.repo_did, records.LABEL_DEFINITION)
     return {
         "name": r.name,
-        "uri": r.uri,
+        "owner": r.owner_did,
         "repo_did": r.repo_did,
         "knot": r.knot,
         "description": r.description,
-        "default_branch": default_branch.get("name"),
+        "default_branch": r.default_branch,
         "languages": {
             lang["name"]: lang["percentage"]
             for lang in languages.get("languages") or []
         },
-        "labels": [uri.rsplit("/", 1)[-1] for uri in r.labels],
+        "labels": [(lbl.get("value") or {}).get("name") for lbl in labels],
+        "url": _repo_url(r),
     }
 
 
 # --- git reads ---------------------------------------------------------------
 
 
+def _first_line(message: str | None) -> str:
+    return (message or "").split("\n")[0]
+
+
 @tangled_mcp.tool
 async def list_branches(repo: RepoParam, limit: Limit = 50) -> list[dict[str, Any]]:
     """list branches with their head commits"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.repo_query(r, "sh.tangled.repo.branches", limit=limit)
+    body = await bobbin.git_query(r, "org.tangled.git.listBranches", limit=limit)
     return [
-        {
-            "name": b["reference"]["name"],
-            "sha": b["reference"]["hash"],
-            "message": ((b.get("commit") or {}).get("Message") or "").split("\n")[0],
-        }
+        {"name": b["name"], "sha": b["oid"], "message": _first_line(b.get("message"))}
         for b in body.get("branches") or []
     ]
 
@@ -177,9 +216,9 @@ async def list_branches(repo: RepoParam, limit: Limit = 50) -> list[dict[str, An
 async def list_tags(repo: RepoParam, limit: Limit = 50) -> list[dict[str, Any]]:
     """list tags"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.repo_query(r, "sh.tangled.repo.tags", limit=limit)
+    body = await bobbin.git_query(r, "org.tangled.git.listTags", limit=limit)
     return [
-        {"name": t.get("name"), "sha": t.get("hash"), "message": t.get("message")}
+        {"name": t["name"], "sha": t.get("oid"), "message": t.get("message")}
         for t in body.get("tags") or []
     ]
 
@@ -194,14 +233,14 @@ async def list_files(
 ) -> list[dict[str, Any]]:
     """list files in a repository directory"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.repo_query(r, "sh.tangled.repo.tree", path=path, ref=ref)
+    body = await bobbin.git_query(r, "org.tangled.git.getTree", path=path, ref=ref)
     return [
         {
             "name": f["name"],
             "is_dir": f.get("mode", "").startswith("004"),
             "size": f.get("size"),
         }
-        for f in body.get("files") or []
+        for f in body.get("entries") or []
     ]
 
 
@@ -213,8 +252,7 @@ async def read_file(
 ) -> str:
     """read a file's contents from a repository"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.repo_query(r, "sh.tangled.repo.blob", path=path, ref=ref)
-    return body.get("content") or ""
+    return (await bobbin.git_blob(r, path, ref)).decode(errors="replace")
 
 
 @tangled_mcp.tool
@@ -225,15 +263,30 @@ async def commit_log(
 ) -> list[dict[str, Any]]:
     """list recent commits"""
     r = await bobbin.resolve_repo(repo)
-    body = await bobbin.repo_query(r, "sh.tangled.repo.log", ref=ref, limit=limit)
+    body = await bobbin.git_query(
+        r,
+        "org.tangled.git.listCommits",
+        ref=ref or r.default_branch or "HEAD",
+        limit=limit,
+    )
     return [
         {
-            "sha": c.get("this"),
-            "message": (c.get("message") or "").split("\n")[0],
-            "author": (c.get("author") or {}).get("Name"),
-            "when": (c.get("author") or {}).get("When"),
+            "sha": c.get("hash"),
+            "message": _first_line(c.get("message")),
+            "author": (c.get("author") or {}).get("name"),
+            "when": (c.get("author") or {}).get("when"),
         }
         for c in body.get("commits") or []
+    ]
+
+
+def _changed_files(diff: dict[str, Any]) -> list[dict[str, str | None]]:
+    return [
+        {
+            "old_path": (d.get("lhsSrc") or {}).get("path"),
+            "new_path": (d.get("rhsSrc") or {}).get("path"),
+        }
+        for d in diff.get("diffs") or []
     ]
 
 
@@ -243,9 +296,10 @@ async def compare(
     rev1: Annotated[str, Field(description="base revision (branch, tag, or sha)")],
     rev2: Annotated[str, Field(description="head revision (branch, tag, or sha)")],
 ) -> dict[str, Any]:
-    """compare two revisions (diff summary)"""
+    """compare two revisions: diff stats and the files that changed"""
     r = await bobbin.resolve_repo(repo)
-    return await bobbin.repo_query(r, "sh.tangled.repo.compare", rev1=rev1, rev2=rev2)
+    diff = await bobbin.git_query(r, "org.tangled.git.getDiff", base=rev1, head=rev2)
+    return {"stats": diff.get("stats"), "files": _changed_files(diff)}
 
 
 # --- issues & pulls ----------------------------------------------------------
@@ -255,101 +309,188 @@ async def compare(
 async def list_issues(
     repo: RepoParam,
     state: Annotated[
-        Literal["open", "closed"] | None, Field(description="filter by state")
+        Literal["open", "closed", "completed"] | None,
+        Field(description="filter by state"),
     ] = None,
     limit: Limit = 20,
 ) -> list[dict[str, Any]]:
     """list issues on a repository"""
     r = await bobbin.resolve_repo(repo)
-    if not r.repo_did:
-        raise ValueError(f"repo '{repo}' has no repoDid; issues unavailable")
     body = await bobbin.query(
-        "sh.tangled.repo.listIssues", subject=r.repo_did, state=state, limit=limit
+        "org.tangled.repo.listIssues", subject=r.repo_did, state=state, limit=limit
     )
-    return [_issue_view(item) for item in body.get("items") or []]
+    return [_ticket_view(item) for item in body.get("items") or []]
 
 
 @tangled_mcp.tool
 async def get_issue(issue: IssueParam) -> dict[str, Any]:
     """get a single issue"""
-    uri = await _issue_uri(issue)
-    body = await bobbin.query("sh.tangled.repo.getIssue", issue=uri)
-    return _issue_view(body)
+    r, number = await _ticket(issue)
+    body = await bobbin.query(
+        "org.tangled.track.getTicketView", uri=_ticket_uri(r, number)
+    )
+    return _ticket_view(body)
 
 
 @tangled_mcp.tool
 async def list_pulls(
     repo: RepoParam,
     status: Annotated[
-        Literal["open", "closed", "merged"] | None,
-        Field(description="filter by status"),
+        Literal["open", "closed", "completed"] | None,
+        Field(description="filter by status; a merged pull is completed"),
     ] = None,
     limit: Limit = 20,
 ) -> list[dict[str, Any]]:
     """list pull requests on a repository"""
     r = await bobbin.resolve_repo(repo)
-    if not r.repo_did:
-        raise ValueError(f"repo '{repo}' has no repoDid; pulls unavailable")
     body = await bobbin.query(
-        "sh.tangled.repo.listPulls", subject=r.repo_did, status=status, limit=limit
+        "org.tangled.repo.listPulls", subject=r.repo_did, status=status, limit=limit
     )
-    return [_pull_view(item) for item in body.get("items") or []]
+    return [_ticket_view(item) for item in body.get("items") or []]
+
+
+@dataclass
+class Revision:
+    """a pull's latest round. `cid` identifies it for stale-review checks:
+    the patch record's cid, or the legacy pull record's for a pull whose
+    rounds predate tangled's org.tangled migration."""
+
+    repo: bobbin.Repo
+    number: str | None
+    rounds: int
+    cid: str
+    patch: dict[str, Any] | None = None
+    legacy: dict[str, Any] | None = None
+
+
+def _is_legacy(pull: str) -> bool:
+    return pull.startswith("at://") and f"/{records.LEGACY_PULL}/" in pull
+
+
+async def _rounds(r: bobbin.Repo, number: str) -> list[dict[str, Any]]:
+    """a pull's patch records, oldest first"""
+    patches = await bobbin.list_records(r.repo_did, records.PATCH)
+    mine = [p for p in patches if (p.get("value") or {}).get("ticket") == number]
+    return sorted(mine, key=lambda p: (p.get("value") or {}).get("createdAt") or "")
+
+
+async def _legacy_for(r: bobbin.Repo, view: dict[str, Any]) -> dict[str, Any] | None:
+    """the legacy pull record a migrated ticket came from: same author, same
+    target repo, same title. the migration kept no link, and a match that is
+    not unique is treated as none."""
+    author = (view.get("author") or {}).get("did")
+    title = _text(view.get("title"))
+    if not author or not title:
+        return None
+    legacy = await bobbin.list_records(author, records.LEGACY_PULL)
+    matches = [
+        rec
+        for rec in legacy
+        if ((rec.get("value") or {}).get("target") or {}).get("repo") == r.repo_did
+        and (rec.get("value") or {}).get("title") == title
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+async def _revision(pull: str) -> tuple[Revision, dict[str, Any] | None]:
+    """the pull's latest round, and its ticket view when it has one"""
+    if _is_legacy(pull):
+        record = await bobbin.get_record(pull)
+        target = (record.get("value") or {}).get("target") or {}
+        r = await bobbin.resolve_repo(target.get("repo") or "")
+        rounds = len((record.get("value") or {}).get("rounds") or [])
+        return Revision(r, None, rounds, record["cid"], legacy=record), None
+    r, number = await _ticket(pull)
+    view = await bobbin.query(
+        "org.tangled.track.getTicketView", uri=_ticket_uri(r, number)
+    )
+    if rounds := await _rounds(r, number):
+        latest = rounds[-1]
+        return Revision(r, number, len(rounds), latest["cid"], patch=latest), view
+    if legacy := await _legacy_for(r, view):
+        rounds_n = len((legacy.get("value") or {}).get("rounds") or [])
+        return Revision(r, number, rounds_n, legacy["cid"], legacy=legacy), view
+    raise ValueError(f"{pull} has no patch rounds")
 
 
 @tangled_mcp.tool
-async def get_pull(
-    pull: Annotated[
-        str,
-        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
-    ],
-) -> dict[str, Any]:
-    """get a pull request with its current state.
+async def get_pull(pull: PullParam) -> dict[str, Any]:
+    """get a pull request: its ticket, state, and patch rounds.
 
-    state is derived from the newest sh.tangled.repo.pull.status record on
-    the author's PDS — the source of truth — so it's live even when the
-    appview/bobbin indexes lag.
+    `cid` names the latest round. pass it as expected_cid to get_pull_patch
+    and comment_on_pull so a review stays tied to the revision it read.
     """
-    record = await bobbin.get_record(pull)
-    value = record.get("value") or {}
-    author = pull.removeprefix("at://").split("/")[0]
-
-    statuses = [
-        s.get("value") or {}
-        for s in await bobbin.list_records(author, records.PULL_STATUS)
-        if (s.get("value") or {}).get("pull") == pull
-    ]
-    latest = max(statuses, key=lambda s: s.get("createdAt") or "", default=None)
-    state = (latest["status"].rsplit(".", 1)[-1]) if latest else "open"
-
-    target = value.get("target") or {}
-    return {
-        "uri": pull,
-        "cid": record.get("cid"),
-        "title": value.get("title"),
-        "body": value.get("body"),
-        "state": state,
-        "state_changed_at": latest.get("createdAt") if latest else None,
-        "target_branch": target.get("branch"),
-        "target_repo": target.get("repo"),
-        "rounds": len(value.get("rounds") or []),
-        "created_at": value.get("createdAt"),
-        "author": author,
-    }
+    rev, view = await _revision(pull)
+    if view is None:
+        assert rev.legacy is not None
+        value = rev.legacy.get("value") or {}
+        base: dict[str, Any] = {
+            "uri": pull,
+            "title": value.get("title"),
+            "body": value.get("body"),
+            "target_branch": (value.get("target") or {}).get("branch"),
+            "created_at": value.get("createdAt"),
+            "author": pull.removeprefix("at://").split("/")[0],
+        }
+    else:
+        base = _ticket_view(view)
+        base["url"] = f"{_repo_url(rev.repo)}/pulls/{rev.number}"
+    out = {**base, "rounds": rev.rounds, "cid": rev.cid}
+    if rev.patch:
+        value = rev.patch["value"]
+        out["base"] = value["base"]["oid"]
+        out["head"] = value["head"]["oid"]
+        out["source"] = value.get("source")
+    if rev.legacy:
+        out["legacy_pull"] = rev.legacy["uri"]
+    return out
 
 
 @tangled_mcp.tool
 async def list_pipelines(repo: RepoParam, limit: Limit = 10) -> list[dict[str, Any]]:
-    """list CI pipelines for a repository"""
+    """list CI pipelines for a repository, from the spindle that runs them"""
     r = await bobbin.resolve_repo(repo)
-    if not r.repo_did:
-        raise ValueError(f"repo '{repo}' has no repoDid; pipelines unavailable")
-    body = await bobbin.query(
-        "sh.tangled.pipeline.listPipelines", subject=r.repo_did, limit=limit
+    if not r.spindle:
+        raise ValueError(f"repo '{repo}' has no spindle; it runs no CI")
+    host = r.spindle.removeprefix("did:web:")
+    response = await bobbin._client.get(
+        f"https://{host}/xrpc/org.tangled.ci.queryPipelines",
+        params={"repo": r.repo_did, "limit": limit},
     )
-    return body.get("items") or []
+    if not response.is_success:
+        raise bobbin.BobbinError(
+            f"queryPipelines on {host} failed ({response.status_code})",
+            status=response.status_code,
+        )
+    return [
+        {
+            "id": p.get("id"),
+            "commit": p.get("commit"),
+            "created_at": p.get("createdAt"),
+            "trigger": (p.get("trigger") or {}).get("$type"),
+            "workflows": [
+                {"name": w.get("name"), "status": w.get("status")}
+                for w in p.get("workflows") or []
+            ],
+        }
+        for p in response.json().get("pipelines") or []
+    ]
 
 
 # --- writes (require TANGLED_HANDLE / TANGLED_PASSWORD) -----------------------
+
+
+async def _label_tokens(r: bobbin.Repo, names: list[str]) -> list[dict[str, str]]:
+    """label names to tokens naming the repo's label definitions"""
+    defs = await bobbin.list_records(r.repo_did, records.LABEL_DEFINITION)
+    by_name = {
+        ((d.get("value") or {}).get("name") or "").lower(): _rkey(d["uri"])
+        for d in defs
+    }
+    missing = [n for n in names if n.lower() not in by_name]
+    if missing:
+        raise ValueError(f"invalid labels: {missing}; available: {sorted(by_name)}")
+    return [{"$type": records.LABEL_TOKEN, "key": by_name[n.lower()]} for n in names]
 
 
 @tangled_mcp.tool
@@ -361,161 +502,48 @@ async def create_issue(
         list[str] | None,
         Field(description="label names from the repo's label set (see get_repo)"),
     ] = None,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """create an issue on a repository"""
     r = await bobbin.resolve_repo(repo)
-    if not r.repo_did:
-        raise ValueError(f"repo '{repo}' has no repoDid; cannot create issues")
-    label_uris = _resolve_labels(labels, r.labels) if labels else []
-
+    record: dict[str, Any] = {
+        "$type": records.TICKET,
+        "title": records.inline(title),
+        "state": "open",
+        "createdAt": records.now(),
+    }
+    if body:
+        record["body"] = records.markdown(body)
+    if labels:
+        record["tangledLabels"] = await _label_tokens(r, labels)
     session = await records.login()
     try:
-        rkey = records.tid()
-        record: dict[str, Any] = {
-            "$type": records.ISSUE,
-            "repo": r.repo_did,
-            "title": title,
-            "createdAt": records.now(),
-        }
-        if body:
-            record["body"] = body
-        result = await session.put_record(records.ISSUE, rkey, record)
-        if label_uris:
-            await _put_label_op(session, result["uri"], add=label_uris)
-        return {
-            "uri": result["uri"],
-            # the appview assigns sequential issue numbers we can't know here
-            "url": f"{APPVIEW_URL}/{repo.lstrip('@')}/issues",
-        }
-    finally:
-        await session.client.aclose()
-
-
-class Edit(BaseModel):
-    """desired end-state of one file. content=None deletes it."""
-
-    path: str
-    content: str | None = None
-
-
-async def _patch_from_edits(
-    r: bobbin.Repo, title: str, target_branch: str, edits: list["Edit"]
-) -> str:
-    """a single-commit format-patch from whole-file edits, diffed against
-    the target branch on the repo's knot."""
-    files = []
-    for e in edits:
-        # the knot is the authority for git data (see repo_query). until
-        # 2026-08-21 this asked bobbin and treated any failure as "new
-        # file", so a rate-limit or a legacy-rkey 404 produced a
-        # /dev/null patch for a file that exists — unmergeable, and
-        # silent about why. only a real not-found means new.
-        try:
-            base = await bobbin.repo_query(
-                r, "sh.tangled.repo.blob", path=e.path, ref=target_branch
-            )
-            old = base.get("content") or ""
-        except bobbin.BobbinError as err:
-            if err.status != 404:
-                raise ValueError(
-                    f"could not read current '{e.path}' on {target_branch}: {err}"
-                ) from err
-            old = None
-        if old is None and e.content is None:
-            raise ValueError(f"cannot delete '{e.path}': not in {target_branch}")
-        if old == e.content:
-            raise ValueError(f"'{e.path}' already has that content")
-        files.append((e.path, old, e.content))
-    author = records.resolve_credentials().handle or "unknown"
-    return synthesize_patch(title, author, files)
-
-
-async def _default_branch(r: bobbin.Repo) -> str:
-    """the repo's default branch, from the knot first. bobbin rate-limits
-    unauthenticated callers (phi hit 429 here on 2026-08-21 with a finished
-    pull request in hand); the knot serves git data without limits, and
-    "main" is the right answer when neither will say."""
-    for attempt in (
-        lambda: bobbin.repo_query(r, "sh.tangled.repo.getDefaultBranch"),
-        lambda: bobbin.query("sh.tangled.repo.getDefaultBranch", repo=r.uri),
-    ):
-        try:
-            body = await attempt()
-        except bobbin.BobbinError:
-            continue
-        if name := body.get("name"):
-            return name
-    return "main"
-
-
-@tangled_mcp.tool
-async def create_pull(
-    repo: RepoParam,
-    title: Annotated[str, Field(description="pull request title")],
-    patch: Annotated[
-        str | None,
-        Field(
-            description="git format-patch output (`git format-patch <base> --stdout`) "
-            "containing the commits to propose"
-        ),
-    ] = None,
-    edits: Annotated[
-        list[Edit] | None,
-        Field(
-            description="alternative to `patch` for callers without a clone: "
-            "full desired content per file (content=null deletes the file); "
-            "the server diffs against the target branch and synthesizes the patch"
-        ),
-    ] = None,
-    target_branch: Annotated[
-        str | None,
-        Field(description="branch to merge into (repo default branch if omitted)"),
-    ] = None,
-    body: Annotated[
-        str | None, Field(description="pull request description (markdown)")
-    ] = None,
-) -> dict[str, str]:
-    """open a patch-based pull request on a repository.
-
-    the changeset — a format-patch you provide, or one synthesized from
-    `edits` — is gzipped and uploaded as a blob on your PDS, then referenced
-    from a sh.tangled.repo.pull record — no push access to the target needed.
-    """
-    if (patch is None) == (edits is None):
-        raise ValueError("provide exactly one of `patch` or `edits`")
-    r = await bobbin.resolve_repo(repo)
-    if not r.repo_did:
-        raise ValueError(f"repo '{repo}' has no repoDid; cannot create pulls")
-    if not target_branch:
-        target_branch = await _default_branch(r)
-
-    if edits is not None:
-        patch = await _patch_from_edits(r, title, target_branch, edits)
-    assert patch is not None
-
-    session = await records.login()
-    try:
-        blob = await session.upload_blob(
-            gzip.compress(patch.encode()), "application/gzip"
+        result = await session.knot_write(
+            r, "com.atproto.repo.createRecord", collection=records.TICKET, record=record
         )
-        rkey = records.tid()
-        record: dict[str, Any] = {
-            "$type": records.PULL,
-            "title": title,
-            "target": {"repo": r.repo_did, "branch": target_branch},
-            "rounds": [{"patchBlob": blob, "createdAt": records.now()}],
-            "createdAt": records.now(),
-        }
-        if body:
-            record["body"] = body
-        result = await session.put_record(records.PULL, rkey, record)
-        return {
-            "uri": result["uri"],
-            # the appview assigns sequential pull numbers we can't know here
-            "url": f"{APPVIEW_URL}/{repo.lstrip('@')}/pulls",
-        }
     finally:
         await session.client.aclose()
+    return {**result, "url": f"{_repo_url(r)}/issues/{_rkey(result['uri'])}"}
+
+
+async def _edit_ticket(
+    ref: str, change: dict[str, Any]
+) -> tuple[bobbin.Repo, dict[str, Any]]:
+    r, number = await _ticket(ref)
+    current = await bobbin.get_record(_ticket_uri(r, number))
+    record = {**records.editable(current["value"]), **change}
+    session = await records.login()
+    try:
+        result = await session.knot_write(
+            r,
+            "com.atproto.repo.putRecord",
+            collection=records.TICKET,
+            rkey=number,
+            swapRecord=current["cid"],
+            record=record,
+        )
+    finally:
+        await session.client.aclose()
+    return r, result
 
 
 @tangled_mcp.tool
@@ -527,59 +555,98 @@ async def update_issue(
     body: Annotated[
         str | None, Field(description="new body (unchanged if omitted)")
     ] = None,
-) -> dict[str, str]:
-    """update an issue you authored"""
-    uri = await _issue_uri(issue)
-    rkey = uri.rsplit("/", 1)[-1]
-    session = await records.login()
-    try:
-        existing = await session.get_record(records.ISSUE, rkey)
-        record = existing["value"]
-        if title is not None:
-            record["title"] = title
-        if body is not None:
-            record["body"] = body
-        result = await session.put_record(records.ISSUE, rkey, record)
-        return {"uri": result["uri"]}
-    finally:
-        await session.client.aclose()
+) -> dict[str, Any]:
+    """update an issue's title or body"""
+    change: dict[str, Any] = {}
+    if title is not None:
+        change["title"] = records.inline(title)
+    if body is not None:
+        change["body"] = records.markdown(body)
+    if not change:
+        raise ValueError("pass a new title or body")
+    _, result = await _edit_ticket(issue, change)
+    return result
 
 
 @tangled_mcp.tool
 async def set_issue_state(
     issue: IssueParam,
+    state: Annotated[
+        Literal["open", "closed", "completed"], Field(description="new state")
+    ],
+) -> dict[str, Any]:
+    """close, complete, or reopen an issue (its author or a maintainer)"""
+    _, result = await _edit_ticket(issue, {"state": state})
+    return {**result, "state": state}
+
+
+@tangled_mcp.tool
+async def set_pull_state(
+    pull: PullParam,
     state: Annotated[Literal["open", "closed"], Field(description="new state")],
+) -> dict[str, Any]:
+    """close or reopen a pull request (its author or a maintainer)"""
+    _, result = await _edit_ticket(pull, {"state": state})
+    return {**result, "state": state}
+
+
+class Edit(BaseModel):
+    """desired end-state of one file. content=None deletes it."""
+
+    path: str
+    content: str | None = None
+
+
+@tangled_mcp.tool
+async def create_pull(
+    repo: RepoParam,
+    title: Annotated[str, Field(description="pull request title")],
+    patch: Annotated[str | None, Field(description="git format-patch output")] = None,
+    edits: Annotated[
+        list[Edit] | None,
+        Field(description="full desired content per file (content=null deletes)"),
+    ] = None,
+    target_branch: Annotated[
+        str | None, Field(description="branch to merge into")
+    ] = None,
+    body: Annotated[
+        str | None, Field(description="pull request description (markdown)")
+    ] = None,
 ) -> dict[str, str]:
-    """close or reopen an issue"""
-    uri = await _issue_uri(issue)
-    session = await records.login()
-    try:
-        record = {
-            "$type": records.ISSUE_STATE,
-            "issue": uri,
-            "state": records.STATE_OPEN if state == "open" else records.STATE_CLOSED,
-            "createdAt": records.now(),
-        }
-        result = await session.put_record(records.ISSUE_STATE, records.tid(), record)
-        return {"uri": result["uri"], "state": state}
-    finally:
-        await session.client.aclose()
+    """open a pull request. unavailable: tangled now opens pulls only from a
+    branch pushed to a tangled repository, and this server cannot push."""
+    raise ValueError(PULL_PATCH_ONLY)
 
 
-async def _pull_round_patch(pull_value: dict[str, Any], author_did: str) -> str:
-    """the latest round's patch text for a pull record."""
-    rounds = pull_value.get("rounds") or []
+@tangled_mcp.tool
+async def update_pull(
+    pull: PullParam,
+    edits: Annotated[
+        list[Edit],
+        Field(description="full desired content per file (content=null deletes)"),
+    ],
+    note: Annotated[str | None, Field(description="what this round changes")] = None,
+) -> dict[str, Any]:
+    """push a new round onto a pull request. unavailable for the same reason
+    as create_pull: a round is a pushed commit, and this server cannot push."""
+    raise ValueError(PULL_PATCH_ONLY)
+
+
+async def _legacy_patch(record: dict[str, Any]) -> str:
+    """a legacy pull record's latest round as patch text, from its blob"""
+    rounds = (record.get("value") or {}).get("rounds") or []
     if not rounds:
         raise ValueError("pull request has no rounds")
     ref = (rounds[-1].get("patchBlob") or {}).get("ref") or {}
     cid = ref.get("$link") if isinstance(ref, dict) else None
     if not cid:
         raise ValueError("latest round has no patch blob")
-    pds = await records.discover_pds(author_did)
+    author = record["uri"].removeprefix("at://").split("/")[0]
+    pds = await records.discover_pds(author)
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(
             f"{pds}/xrpc/com.atproto.sync.getBlob",
-            params={"did": author_did, "cid": cid},
+            params={"did": author, "cid": cid},
         )
         response.raise_for_status()
         data = response.content
@@ -589,243 +656,158 @@ async def _pull_round_patch(pull_value: dict[str, Any], author_did: str) -> str:
         return data.decode()
 
 
+async def _blob_or_none(r: bobbin.Repo, path: str | None, ref: str) -> str | None:
+    if not path:
+        return None
+    try:
+        return (await bobbin.git_blob(r, path, ref)).decode(errors="replace")
+    except bobbin.BobbinError as err:
+        if err.status == 404:
+            return None
+        raise
+
+
+def _check_revision(rev: Revision, expected_cid: str | None) -> None:
+    if expected_cid is not None and rev.cid != expected_cid:
+        raise ValueError("Pull changed; fetch and review the new revision")
+
+
 @tangled_mcp.tool
 async def get_pull_patch(
-    pull: Annotated[
-        str,
-        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
-    ],
+    pull: PullParam,
     expected_cid: Annotated[
         str | None,
-        Field(description="Pull record CID captured before review; reject if changed"),
+        Field(
+            description="cid from get_pull, captured before review; reject if changed"
+        ),
     ] = None,
 ) -> str:
-    """the pull request's latest round as git format-patch text — the whole
-    change against the target branch, every file. read this to review a pull;
+    """the pull request's latest round as git format-patch text: the whole
+    change against its base, every file. read this to review a pull;
     get_pull_file is for one file's resulting content."""
-    author = pull.removeprefix("at://").split("/")[0]
-    record = await bobbin.get_record(pull)
-    if expected_cid is not None and record.get("cid") != expected_cid:
-        raise ValueError("Pull changed; fetch and review the new revision")
-    return await _pull_round_patch(record.get("value") or {}, author)
+    rev, view = await _revision(pull)
+    _check_revision(rev, expected_cid)
+    if rev.legacy:
+        return await _legacy_patch(rev.legacy)
+    assert rev.patch is not None and view is not None
+    value = rev.patch["value"]
+    base, head = value["base"]["oid"], value["head"]["oid"]
+    diff = await bobbin.git_query(
+        rev.repo, "org.tangled.git.getDiff", base=base, head=head
+    )
+    files = []
+    for d in diff.get("diffs") or []:
+        lhs, rhs = d.get("lhsSrc") or {}, d.get("rhsSrc") or {}
+        if lhs.get("isBinary") or rhs.get("isBinary"):
+            continue
+        old = await _blob_or_none(rev.repo, lhs.get("path"), base)
+        new = await _blob_or_none(rev.repo, rhs.get("path"), head)
+        files.append((rhs.get("path") or lhs.get("path"), old, new))
+    title = _text(view.get("title")) or "pull"
+    return synthesize_patch(title, _author(view) or "", files)
 
 
 @tangled_mcp.tool
 async def get_pull_file(
-    pull: Annotated[
-        str,
-        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
-    ],
+    pull: PullParam,
     path: Annotated[str, Field(description="file path within the repo")],
 ) -> str:
-    """a file as the pull request's latest round leaves it — the base branch
-    plus the round's patch. revise a pull from this, not from read_file on
-    the target branch: the branch does not have the pull's changes yet."""
-    author = pull.removeprefix("at://").split("/")[0]
-    record = await bobbin.get_record(pull)
-    value = record.get("value") or {}
-    target = value.get("target") or {}
-    r = await bobbin.resolve_repo(target.get("repo") or "")
-    branch = target.get("branch") or await _default_branch(r)
-    try:
-        base = (
-            await bobbin.repo_query(r, "sh.tangled.repo.blob", path=path, ref=branch)
-        ).get("content") or ""
-    except bobbin.BobbinError as err:
-        if err.status != 404:
-            raise
-        base = ""
-    patch = await _pull_round_patch(value, author)
-    content = apply_to_file(patch, path, base)
-    return base if content is None else content
-
-
-@tangled_mcp.tool
-async def update_pull(
-    pull: Annotated[
-        str,
-        Field(
-            description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey) — must be yours"
-        ),
-    ],
-    edits: Annotated[
-        list[Edit],
-        Field(
-            description="full desired content per file (content=null deletes the file); diffed against the target branch"
-        ),
-    ],
-    note: Annotated[
-        str | None,
-        Field(
-            description="optional: what this round changes, appended to the pull body"
-        ),
-    ] = None,
-) -> dict[str, Any]:
-    """push a new round onto an existing pull request instead of opening a
-    new one. reviewers comment on a pull; the revision belongs on that same
-    pull. the patch is synthesized against the target branch, so pass the
-    whole file as you want it now."""
-    did, collection, rkey = pull.removeprefix("at://").split("/", 2)
-    if collection != records.PULL:
-        raise ValueError(f"not a pull request uri: {pull}")
-    session = await records.login()
-    try:
-        if session.did != did:
-            raise ValueError("you can only add rounds to your own pull requests")
-        current = (await session.get_record(records.PULL, rkey)).get("value") or {}
-        target = current.get("target") or {}
-        r = await bobbin.resolve_repo(target.get("repo") or "")
-        branch = target.get("branch") or await _default_branch(r)
-        patch = await _patch_from_edits(
-            r, current.get("title") or "update", branch, edits
-        )
-        blob = await session.upload_blob(
-            gzip.compress(patch.encode()), "application/gzip"
-        )
-        rounds = list(current.get("rounds") or [])
-        rounds.append({"patchBlob": blob, "createdAt": records.now()})
-        record = {**current, "rounds": rounds}
-        if note:
-            record["body"] = (
-                (current.get("body") or "") + f"\n\n---\nround {len(rounds)}: {note}"
-            ).strip()
-        result = await session.put_record(records.PULL, rkey, record)
-        return {
-            "uri": result["uri"],
-            "round": len(rounds),
-            "url": f"{APPVIEW_URL}/{r.name and (r.owner_did + '/' + r.name)}/pulls",
-        }
-    finally:
-        await session.client.aclose()
-
-
-@tangled_mcp.tool
-async def set_pull_state(
-    pull: Annotated[
-        str,
-        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
-    ],
-    state: Annotated[
-        Literal["open", "closed", "merged"], Field(description="new state")
-    ],
-) -> dict[str, str]:
-    """close, reopen, or mark merged a pull request you authored"""
-    status = {
-        "open": records.PULL_OPEN,
-        "closed": records.PULL_CLOSED,
-        "merged": records.PULL_MERGED,
-    }[state]
-    session = await records.login()
-    try:
-        record = {
-            "$type": records.PULL_STATUS,
-            "pull": pull,
-            "status": status,
-            "createdAt": records.now(),
-        }
-        result = await session.put_record(records.PULL_STATUS, records.tid(), record)
-        return {"uri": result["uri"], "state": state}
-    finally:
-        await session.client.aclose()
+    """a file as the pull request's latest round leaves it. revise or review
+    from this, not from read_file on the target branch: the branch does not
+    have the pull's changes yet."""
+    rev, _ = await _revision(pull)
+    if rev.legacy:
+        target = (rev.legacy.get("value") or {}).get("target") or {}
+        branch = target.get("branch") or rev.repo.default_branch or "main"
+        base = await _blob_or_none(rev.repo, path, branch) or ""
+        content = apply_to_file(await _legacy_patch(rev.legacy), path, base)
+        return base if content is None else content
+    assert rev.patch is not None
+    content = await _blob_or_none(rev.repo, path, rev.patch["value"]["head"]["oid"])
+    if content is None:
+        raise ValueError(f"'{path}' does not exist in the pull's latest round")
+    return content
 
 
 @tangled_mcp.tool
 async def comment_on_issue(
     issue: IssueParam,
     body: Annotated[str, Field(description="comment body (markdown)")],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """comment on an issue"""
-    uri = await _issue_uri(issue)
+    r, number = await _ticket(issue)
+    ticket = await bobbin.get_record(_ticket_uri(r, number))
+    return await _comment(r, {"uri": ticket["uri"], "cid": ticket["cid"]}, body)
+
+
+async def _comment(
+    r: bobbin.Repo, subject: dict[str, str], body: str
+) -> dict[str, Any]:
+    record = {
+        "$type": records.COMMENT,
+        "subject": subject,
+        "body": records.markdown(body),
+        "createdAt": records.now(),
+    }
     session = await records.login()
     try:
-        record = {
-            "$type": records.ISSUE_COMMENT,
-            "issue": uri,
-            "body": body,
-            "createdAt": records.now(),
-        }
-        result = await session.put_record(records.ISSUE_COMMENT, records.tid(), record)
-        return {"uri": result["uri"]}
+        return await session.knot_write(
+            r,
+            "com.atproto.repo.createRecord",
+            collection=records.COMMENT,
+            record=record,
+        )
     finally:
         await session.client.aclose()
 
 
 @tangled_mcp.tool
 async def comment_on_pull(
-    pull: Annotated[
-        str,
-        Field(description="pull request at-uri (at://did/sh.tangled.repo.pull/rkey)"),
-    ],
+    pull: PullParam,
     body: Annotated[str, Field(description="comment body (markdown)")],
     expected_cid: Annotated[
         str | None,
-        Field(description="CID of the pull revision reviewed; reject stale reviews"),
+        Field(
+            description="cid from get_pull of the round reviewed; rejects stale reviews"
+        ),
     ] = None,
-) -> dict[str, str]:
-    """comment on a pull request — the record lands in your repo, pointing at the pull.
-
-    tangled's current comment lexicon is sh.tangled.feed.comment: a subject
-    strong ref (the pull's uri + cid) and a markdown body object. The legacy
-    sh.tangled.repo.pull.comment is not rendered on the pull page any more.
-    """
+) -> dict[str, Any]:
+    """comment on a pull request. the comment points at the latest round when
+    it has a patch record, so a review stays attached to the revision it read."""
     if (
         re.search(r"VERDICT:\s*(approve|request-changes|escalate)", body, re.IGNORECASE)
         and not expected_cid
     ):
         raise ValueError("Review verdicts require the CID of the revision reviewed")
-    target = await bobbin.get_record(pull)
-    if expected_cid is not None and target.get("cid") != expected_cid:
+    rev, _ = await _revision(pull)
+    _check_revision(rev, expected_cid)
+    if rev.number is None:
         raise ValueError(
-            "Pull changed; fetch and review the new revision before commenting"
+            "comments go on the pull's ticket; pass its ticket uri (find it with "
+            "list_pulls) instead of the legacy pull record"
         )
-    rounds = (target.get("value") or {}).get("rounds") or []
-    session = await records.login()
-    try:
-        record = {
-            "$type": records.FEED_COMMENT,
-            "subject": {"uri": pull, "cid": target.get("cid")},
-            "body": {"$type": records.MARKDOWN, "text": body, "original": body},
-            "pullRoundIdx": max(len(rounds) - 1, 0),
-            "createdAt": records.now(),
-        }
-        result = await session.put_record(records.FEED_COMMENT, records.tid(), record)
-        return {"uri": result["uri"]}
-    finally:
-        await session.client.aclose()
+    if rev.patch:
+        subject = {"uri": rev.patch["uri"], "cid": rev.patch["cid"]}
+    else:
+        ticket = await bobbin.get_record(_ticket_uri(rev.repo, rev.number))
+        subject = {"uri": ticket["uri"], "cid": ticket["cid"]}
+    return await _comment(rev.repo, subject, body)
 
 
 @tangled_mcp.tool
 async def delete_issue(issue: IssueParam) -> dict[str, str]:
     """delete an issue you authored"""
-    uri = await _issue_uri(issue)
+    r, number = await _ticket(issue)
+    current = await bobbin.get_record(_ticket_uri(r, number))
     session = await records.login()
     try:
-        await session.delete_record(records.ISSUE, uri.rsplit("/", 1)[-1])
-        return {"deleted": uri}
+        await session.knot(
+            r,
+            "com.atproto.repo.deleteRecord",
+            collection=records.TICKET,
+            rkey=number,
+            swapRecord=current["cid"],
+        )
     finally:
         await session.client.aclose()
-
-
-def _resolve_labels(names: list[str], repo_label_uris: list[str]) -> list[str]:
-    """map label names to the repo's subscribed label definition at-uris"""
-    by_name = {uri.rsplit("/", 1)[-1].lower(): uri for uri in repo_label_uris}
-    missing = [n for n in names if n.lower() not in by_name]
-    if missing:
-        raise ValueError(f"invalid labels: {missing}; available: {sorted(by_name)}")
-    return [by_name[n.lower()] for n in names]
-
-
-async def _put_label_op(
-    session: records.Session,
-    subject: str,
-    add: list[str] | None = None,
-    delete: list[str] | None = None,
-) -> None:
-    record = {
-        "$type": records.LABEL_OP,
-        "subject": subject,
-        "add": [{"key": uri, "value": ""} for uri in add or []],
-        "delete": [{"key": uri, "value": ""} for uri in delete or []],
-        "performedAt": records.now(),
-    }
-    await session.put_record(records.LABEL_OP, records.tid(), record)
+    return {"deleted": current["uri"]}

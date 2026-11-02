@@ -1,43 +1,84 @@
+import json
+from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
-from tangled_mcp import bobbin
+from tangled_mcp import bobbin, records, server
 from tangled_mcp.records import tid
-from tangled_mcp.server import (
-    _issue_view,
-    _pull_view,
-    _resolve_labels,
-    get_repo,
-    tangled_mcp,
-)
 
-REPO_RECORD = {
-    "uri": "at://did:plc:owner/sh.tangled.repo/myrepo",
-    "value": {
-        "$type": "sh.tangled.repo",
-        "knot": "knot1.tangled.sh",
-        "repoDid": "did:plc:repodid",
-        "labels": ["at://did:plc:x/sh.tangled.label.definition/bug"],
-    },
-}
+FIXTURES = Path(__file__).parent / "fixtures"
+REPO_DID = "did:plc:ebajxjsw7iuwstddnxt6lt3m"
+OWNER_DID = "did:plc:xbtmt2zjwlrfegqvch7fboei"
+KNOT = "knot1.tangled.sh"
+BOBBIN = "api.tangled.org"
+TICKET_26 = f"at://{REPO_DID}/org.tangled.track.ticket/26"
 
-LEGACY_RECORD = {
-    "uri": "at://did:plc:owner/sh.tangled.repo/3m2ur2jrcfh22",
-    "value": {
-        "$type": "sh.tangled.repo",
-        "name": "legacy-repo",
-        "knot": "knot1.tangled.sh",
-        "repoDid": "did:plc:legacydid",
-    },
-}
+
+def fixture(name: str) -> dict[str, Any]:
+    return json.loads((FIXTURES / f"{name}.json").read_text())
+
+
+def did_doc(endpoint: str) -> dict[str, Any]:
+    return {
+        "service": [{"type": "AtprotoPersonalDataServer", "serviceEndpoint": endpoint}]
+    }
+
+
+class World:
+    """a fake tangled: bobbin, one knot, plc, and whatever extra routes a test
+    adds. records every request so tests can assert where reads went."""
+
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+        self.routes: dict[tuple[str, str], Any] = {
+            (BOBBIN, "org.tangled.repo.getRepoByName"): fixture("repo_by_name"),
+            (BOBBIN, "org.tangled.repo.getRepoByRepoDid"): fixture("repo_by_name"),
+            (BOBBIN, "org.tangled.repo.listIssues"): fixture("list_issues"),
+            (BOBBIN, "org.tangled.repo.listPulls"): fixture("list_pulls"),
+            (BOBBIN, "org.tangled.repo.listRepos"): fixture("list_repos"),
+            (BOBBIN, "org.tangled.search.query"): fixture("search"),
+            (BOBBIN, "org.tangled.track.getTicketView"): fixture("ticket_view"),
+            (KNOT, "org.tangled.git.getTree"): fixture("tree"),
+            (KNOT, "org.tangled.git.listBranches"): fixture("branches"),
+            (KNOT, "org.tangled.git.listTags"): fixture("tags"),
+            (KNOT, "org.tangled.git.listCommits"): fixture("commits"),
+            (KNOT, "org.tangled.git.listLanguages"): fixture("languages"),
+            (KNOT, "org.tangled.git.getDiff"): fixture("diff"),
+            (KNOT, "com.atproto.repo.listRecords"): {"records": []},
+            ("plc.directory", "*"): did_doc(f"https://{KNOT}"),
+        }
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        host, path = request.url.host, request.url.path
+        nsid = path.rsplit("/", 1)[-1]
+        found = self.routes.get((host, nsid), self.routes.get((host, "*")))
+        if found is None:
+            return httpx.Response(404, json={"error": "NotFound", "message": path})
+        if callable(found):
+            return found(request)
+        return httpx.Response(200, json=found)
+
+    def hosts(self, nsid: str) -> set[str]:
+        return {r.url.host for r in self.requests if r.url.path.endswith(nsid)}
+
+
+@pytest.fixture
+async def world(monkeypatch: pytest.MonkeyPatch):
+    w = World()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(w.handle)) as client:
+        monkeypatch.setattr(bobbin, "_client", client)
+        yield w
 
 
 async def test_tools_registered():
-    tools = await tangled_mcp.list_tools()
+    tools = await server.tangled_mcp.list_tools()
     assert {
         "search",
+        "get_record",
         "list_repos",
         "get_repo",
         "list_branches",
@@ -65,84 +106,48 @@ async def test_tools_registered():
     } <= {tool.name for tool in tools}
 
 
-async def test_resolve_repo_new_style(monkeypatch: pytest.MonkeyPatch):
-    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
-        assert nsid == "sh.tangled.repo.getRepo"
-        assert params["repo"] == "at://did:plc:owner/sh.tangled.repo/myrepo"
-        return REPO_RECORD
-
-    monkeypatch.setattr(bobbin, "query", fake_query)
-    monkeypatch.setattr(bobbin, "resolve_handle", _const("did:plc:owner"))
-
-    repo = await bobbin.resolve_repo("owner.example/myrepo")
-    assert repo.name == "myrepo"
-    assert repo.repo_did == "did:plc:repodid"
-    assert repo.knot == "knot1.tangled.sh"
+# --- repo resolution ---------------------------------------------------------
 
 
-async def test_resolve_repo_legacy_fallback(monkeypatch: pytest.MonkeyPatch):
-    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
-        if nsid == "sh.tangled.repo.getRepo":
-            raise bobbin.BobbinError("not found")
-        assert nsid == "sh.tangled.repo.listRepos"
-        return {"items": [LEGACY_RECORD], "cursor": None}
-
-    monkeypatch.setattr(bobbin, "query", fake_query)
-    monkeypatch.setattr(bobbin, "resolve_handle", _const("did:plc:owner"))
-
-    repo = await bobbin.resolve_repo("@owner.example/legacy-repo")
-    assert repo.name == "legacy-repo"
-    assert repo.uri.endswith("/3m2ur2jrcfh22")
-    assert repo.repo_did == "did:plc:legacydid"
+async def test_resolve_repo_by_owner_and_name(world: World, monkeypatch):
+    monkeypatch.setattr(bobbin, "resolve_handle", AsyncMock(return_value=OWNER_DID))
+    r = await bobbin.resolve_repo("@zzstoatzz.io/bot")
+    assert (r.name, r.repo_did, r.knot, r.default_branch) == (
+        "bot",
+        REPO_DID,
+        KNOT,
+        "main",
+    )
+    [lookup] = [q for q in world.requests if "getRepoByName" in q.url.path]
+    assert lookup.url.params["owner"] == OWNER_DID  # bobbin rejects handles here
 
 
-async def test_resolve_repo_not_found(monkeypatch: pytest.MonkeyPatch):
-    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
-        if nsid == "sh.tangled.repo.getRepo":
-            raise bobbin.BobbinError("not found")
-        return {"items": [], "cursor": None}
+@pytest.mark.parametrize(
+    "identifier",
+    [REPO_DID, f"at://{REPO_DID}/org.tangled.repo.manifest/self"],
+)
+async def test_resolve_repo_by_repo_did(world: World, identifier: str):
+    r = await bobbin.resolve_repo(identifier)
+    assert r.repo_did == REPO_DID
+    assert world.hosts("getRepoByRepoDid") == {BOBBIN}
 
-    monkeypatch.setattr(bobbin, "query", fake_query)
-    monkeypatch.setattr(bobbin, "resolve_handle", _const("did:plc:owner"))
 
+async def test_resolve_repo_follows_a_legacy_repo_uri_by_name(world: World):
+    r = await bobbin.resolve_repo(f"at://{OWNER_DID}/sh.tangled.repo/bot")
+    assert r.repo_did == REPO_DID
+    [lookup] = [q for q in world.requests if "getRepoByName" in q.url.path]
+    assert lookup.url.params["name"] == "bot"
+
+
+async def test_resolve_repo_not_found(world: World, monkeypatch):
+    monkeypatch.setattr(bobbin, "resolve_handle", AsyncMock(return_value=OWNER_DID))
+    world.routes[(BOBBIN, "org.tangled.repo.getRepoByName")] = lambda _: (
+        httpx.Response(
+            404, json={"error": "RecordNotFound", "message": "record not found"}
+        )
+    )
     with pytest.raises(ValueError, match="not found"):
-        await bobbin.resolve_repo("owner.example/nope")
-
-
-async def test_resolve_repo_accepts_at_uri(monkeypatch: pytest.MonkeyPatch):
-    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
-        assert nsid == "sh.tangled.repo.getRepo"
-        return REPO_RECORD
-
-    monkeypatch.setattr(bobbin, "query", fake_query)
-    repo = await bobbin.resolve_repo("at://did:plc:owner/sh.tangled.repo/myrepo")
-    assert repo.name == "myrepo"
-    assert repo.owner_did == "did:plc:owner"
-
-
-async def test_resolve_repo_accepts_repo_did(monkeypatch: pytest.MonkeyPatch):
-    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
-        assert nsid == "sh.tangled.repo.getRepoByRepoDid"
-        assert params["repoDid"] == "did:plc:repodid"
-        return REPO_RECORD
-
-    monkeypatch.setattr(bobbin, "query", fake_query)
-    repo = await bobbin.resolve_repo("did:plc:repodid")
-    assert repo.name == "myrepo"
-
-
-async def test_resolve_repo_did_owner_uses_lookup_path(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    # 'did:plc:owner/myrepo' must take the owner/repo path, not getRepoByRepoDid
-    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
-        assert nsid == "sh.tangled.repo.getRepo"
-        return REPO_RECORD
-
-    monkeypatch.setattr(bobbin, "query", fake_query)
-    monkeypatch.setattr(bobbin, "resolve_handle", _const("did:plc:owner"))
-    repo = await bobbin.resolve_repo("did:plc:owner/myrepo")
-    assert repo.name == "myrepo"
+        await bobbin.resolve_repo("zzstoatzz.io/nope")
 
 
 async def test_resolve_repo_rejects_bad_format():
@@ -150,78 +155,377 @@ async def test_resolve_repo_rejects_bad_format():
         await bobbin.resolve_repo("just-a-name")
 
 
-@pytest.mark.parametrize("record", [REPO_RECORD, LEGACY_RECORD])
-@pytest.mark.parametrize("proxy_status", [404, 429])
-async def test_get_repo_reads_git_metadata_from_knot(monkeypatch, record, proxy_status):
-    """A working knot must remain readable when Bobbin's Git proxy fails."""
-
-    def respond(request: httpx.Request) -> httpx.Response:
-        nsid = request.url.path.rsplit("/", 1)[-1]
-        if nsid == "sh.tangled.repo.getRepo":
-            return httpx.Response(200, json=record)
-        if request.url.host != record["value"]["knot"]:
-            return httpx.Response(proxy_status, json={"error": "RepoNotFound"})
-        assert request.url.params["repo"] == record["value"]["repoDid"]
-        if nsid == "sh.tangled.repo.getDefaultBranch":
-            return httpx.Response(200, json={"name": "trunk"})
-        assert nsid == "sh.tangled.repo.languages"
-        return httpx.Response(
-            200, json={"languages": [{"name": "Python", "percentage": 100}]}
-        )
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        monkeypatch.setattr(bobbin, "_client", client)
-        result = await get_repo(record["uri"])
-    assert result["default_branch"] == "trunk"
-    assert result["languages"] == {"Python": 100}
-    assert result["repo_did"] == record["value"]["repoDid"]
+# --- git reads come from the knot ------------------------------------------------
 
 
-def test_issue_view():
-    view = _issue_view(
-        {
-            "uri": "at://did:plc:author/sh.tangled.repo.issue/3mabc",
-            "value": {"title": "t", "body": "b", "createdAt": "2026-01-01T00:00:00Z"},
-            "state": "open",
-            "commentCount": 2,
-        }
+async def test_git_reads_go_to_the_knot_by_repo_did(world: World):
+    world.routes[(KNOT, "org.tangled.git.getBlob")] = lambda _: httpx.Response(
+        200, content="phi — a bluesky bot.\n".encode()
     )
-    assert view == {
-        "uri": "at://did:plc:author/sh.tangled.repo.issue/3mabc",
-        "title": "t",
-        "body": "b",
-        "state": "open",
-        "comment_count": 2,
-        "created_at": "2026-01-01T00:00:00Z",
-        "author": "did:plc:author",
+    files = await server.list_files(REPO_DID, path="src/bot/core")
+    assert files[0] == {"name": "__init__.py", "is_dir": False, "size": 0}
+    assert (
+        await server.read_file(REPO_DID, path="AGENTS.md") == "phi — a bluesky bot.\n"
+    )
+    commits = await server.commit_log(REPO_DID, limit=2)
+    assert commits[0]["sha"] == "6f33ba4d0dfd8983dd551b5648232dcaea6b7bee"
+    assert commits[0]["message"] == "mcp_tools: default pdsx reads to phi's repo"
+    branches = await server.list_branches(REPO_DID)
+    assert branches[0]["name"] == "main"
+
+    git = [q for q in world.requests if "/org.tangled.git." in q.url.path]
+    assert {q.url.host for q in git} == {KNOT}
+    assert {q.url.params["repo"] for q in git} == {REPO_DID}
+    [log] = [q for q in git if q.url.path.endswith("listCommits")]
+    assert log.url.params["ref"] == "main"  # listCommits requires a ref
+
+
+async def test_read_file_missing_path_is_a_404(world: World):
+    world.routes[(KNOT, "org.tangled.git.getBlob")] = lambda _: httpx.Response(
+        404, json={"error": "FileNotFound", "message": "file not found"}
+    )
+    with pytest.raises(bobbin.BobbinError) as err:
+        await server.read_file(REPO_DID, path="nope.md")
+    assert isinstance(err.value, bobbin.BobbinError) and err.value.status == 404
+
+
+async def test_compare_summarizes_the_diff(world: World):
+    result = await server.compare(REPO_DID, "3804117", "6f33ba4")
+    assert result["stats"] == {"insertions": 155, "deletions": 25, "filesChanged": 12}
+    assert result["files"][0] == {
+        "old_path": "CHANGELOG.md",
+        "new_path": "CHANGELOG.md",
     }
 
 
-def test_pull_view():
-    view = _pull_view(
-        {
-            "uri": "at://did:plc:author/sh.tangled.repo.pull/3mxyz",
-            "value": {
-                "title": "t",
-                "target": {"branch": "main", "repo": "did:plc:repodid"},
-                "source": {"branch": "feature"},
-            },
-            "status": "open",
+async def test_list_pipelines_asks_the_repos_spindle(world: World):
+    world.routes[("spindle.zzstoatzz.io", "org.tangled.ci.queryPipelines")] = fixture(
+        "pipelines"
+    )
+    [latest, *_] = await server.list_pipelines(REPO_DID, limit=2)
+    assert latest["workflows"] == [{"name": "deploy.yml", "status": "success"}]
+    assert world.hosts("queryPipelines") == {"spindle.zzstoatzz.io"}
+
+
+# --- tickets -----------------------------------------------------------------
+
+
+async def test_list_issues_reads_ticket_markup(world: World):
+    [first, *_] = await server.list_issues(REPO_DID)
+    assert first["number"] == 2
+    assert first["title"].startswith("policy: add thread-fit check")
+    assert first["state"] == "open"
+    assert first["author"] == "did:plc:65sucjiel52gefhcdcypynsr"
+    [listed] = [q for q in world.requests if "listIssues" in q.url.path]
+    assert listed.url.params["subject"] == REPO_DID
+
+
+async def test_list_pulls_carries_the_target_branch(world: World):
+    [newest, *_] = await server.list_pulls(REPO_DID)
+    assert (newest["number"], newest["state"], newest["target_branch"]) == (
+        26,
+        "completed",
+        "main",
+    )
+
+
+@pytest.mark.parametrize(
+    "ref", ["zzstoatzz.io/bot#25", f"at://{REPO_DID}/org.tangled.track.ticket/25"]
+)
+async def test_ticket_references(world: World, monkeypatch, ref: str):
+    monkeypatch.setattr(bobbin, "resolve_handle", AsyncMock(return_value=OWNER_DID))
+    r, number = await server._ticket(ref)
+    assert (r.repo_did, number) == (REPO_DID, "25")
+
+
+async def test_legacy_issue_uri_points_at_the_new_lists():
+    with pytest.raises(ValueError, match="list_issues"):
+        await server._ticket("at://did:plc:author/sh.tangled.repo.issue/3mabc")
+
+
+# --- pulls -------------------------------------------------------------------
+
+
+def patch_record(cid: str, ticket: str, base: str, head: str, at: str) -> dict:
+    return {
+        "uri": f"at://{REPO_DID}/org.tangled.review.patch/{cid}",
+        "cid": cid,
+        "value": {
+            "$type": "org.tangled.review.patch",
+            "ticket": ticket,
+            "base": {"oid": base},
+            "head": {"oid": head},
+            "createdAt": at,
+        },
+    }
+
+
+async def test_get_pull_names_its_latest_round(world: World):
+    world.routes[(KNOT, "com.atproto.repo.listRecords")] = {
+        "records": [
+            patch_record("round-two", "26", "b1", "h2", "2026-11-02T00:00:00Z"),
+            patch_record("round-one", "26", "b1", "h1", "2026-11-01T00:00:00Z"),
+            patch_record("other", "9", "x", "y", "2026-11-03T00:00:00Z"),
+        ]
+    }
+    pull = await server.get_pull(TICKET_26)
+    assert (pull["rounds"], pull["cid"], pull["base"], pull["head"]) == (
+        2,
+        "round-two",
+        "b1",
+        "h2",
+    )
+
+
+def _legacy_world(world: World, legacy: list[dict]) -> None:
+    gardener = "did:plc:7vx7exykq2zfxjxxejovrymi"
+    view = fixture("ticket_view")
+
+    def listed(request: httpx.Request) -> httpx.Response:
+        if request.url.params["repo"] == gardener:
+            return httpx.Response(200, json={"records": legacy})
+        return httpx.Response(200, json={"records": []})
+
+    world.routes[(BOBBIN, "org.tangled.track.getTicketView")] = view
+    world.routes[(KNOT, "com.atproto.repo.listRecords")] = listed
+    world.routes[("pds.example", "com.atproto.repo.listRecords")] = listed
+
+    def plc(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(gardener):
+            return httpx.Response(200, json=did_doc("https://pds.example"))
+        return httpx.Response(200, json=did_doc(f"https://{KNOT}"))
+
+    world.routes[("plc.directory", "*")] = plc
+
+
+def legacy_pull(rkey: str, title: str, repo: str = REPO_DID) -> dict:
+    return {
+        "uri": f"at://did:plc:7vx7exykq2zfxjxxejovrymi/sh.tangled.repo.pull/{rkey}",
+        "cid": f"cid-{rkey}",
+        "value": {
+            "title": title,
+            "target": {"repo": repo, "branch": "main"},
+            "rounds": [{"patchBlob": {"ref": {"$link": "blob"}}}],
+        },
+    }
+
+
+THREAD_FIT = "policy: thread-fit warn for replies in someone else's thread"
+
+
+async def test_a_migrated_pull_finds_its_legacy_rounds(world: World):
+    _legacy_world(
+        world,
+        [
+            legacy_pull("3mulujsfye7fn", THREAD_FIT),
+            legacy_pull("3elsewhere", THREAD_FIT, repo="did:plc:another"),
+            legacy_pull("3other", "something else"),
+        ],
+    )
+    pull = await server.get_pull(f"at://{REPO_DID}/org.tangled.track.ticket/25")
+    assert pull["cid"] == "cid-3mulujsfye7fn"
+    assert pull["legacy_pull"].endswith("/3mulujsfye7fn")
+
+
+async def test_an_ambiguous_legacy_match_is_no_match(world: World):
+    _legacy_world(world, [legacy_pull("3a", THREAD_FIT), legacy_pull("3b", THREAD_FIT)])
+    with pytest.raises(ValueError, match="no patch rounds"):
+        await server.get_pull(f"at://{REPO_DID}/org.tangled.track.ticket/25")
+
+
+async def test_get_pull_patch_renders_the_round_from_both_sides(world: World):
+    world.routes[(KNOT, "com.atproto.repo.listRecords")] = {
+        "records": [patch_record("round", "26", "base", "head", "2026-11-01T00:00:00Z")]
+    }
+    world.routes[(KNOT, "org.tangled.git.getDiff")] = {
+        "diffs": [
+            {
+                "lhsSrc": {"path": "phi.md", "isBinary": False},
+                "rhsSrc": {"path": "phi.md", "isBinary": False},
+                "hunks": [],
+                "hasSyntacticChanges": True,
+            }
+        ]
+    }
+    content = {"base": "one\ntwo\n", "head": "one\nthree\n"}
+    world.routes[(KNOT, "org.tangled.git.getBlob")] = lambda request: httpx.Response(
+        200, content=content[request.url.params["ref"]].encode()
+    )
+    patch = await server.get_pull_patch(TICKET_26, expected_cid="round")
+    assert "Subject: [PATCH] policy: thread-fit warn" in patch
+    assert "-two\n+three\n" in patch
+    with pytest.raises(ValueError, match="Pull changed"):
+        await server.get_pull_patch(TICKET_26, expected_cid="older-round")
+
+
+async def test_get_pull_file_reads_the_rounds_head(world: World):
+    world.routes[(KNOT, "com.atproto.repo.listRecords")] = {
+        "records": [patch_record("round", "26", "base", "head", "2026-11-01T00:00:00Z")]
+    }
+    world.routes[(KNOT, "org.tangled.git.getBlob")] = lambda request: httpx.Response(
+        200, content=f"at {request.url.params['ref']}".encode()
+    )
+    assert await server.get_pull_file(TICKET_26, "phi.md") == "at head"
+
+
+@pytest.mark.parametrize("tool", ["create_pull", "update_pull"])
+async def test_pull_writes_say_why_they_are_unavailable(tool: str):
+    fn = getattr(server, tool)
+    kwargs = (
+        {"repo": REPO_DID, "title": "t"}
+        if tool == "create_pull"
+        else {
+            "pull": TICKET_26,
+            "edits": [],
         }
     )
-    assert view["target_branch"] == "main"
-    assert view["source_branch"] == "feature"
-    assert view["state"] == "open"
+    with pytest.raises(ValueError, match="pushed to a tangled repository"):
+        await fn(**kwargs)
 
 
-def test_resolve_labels():
-    repo_labels = [
-        "at://did:plc:x/sh.tangled.label.definition/bug",
-        "at://did:plc:x/sh.tangled.label.definition/good-first-issue",
-    ]
-    assert _resolve_labels(["Bug"], repo_labels) == [repo_labels[0]]
-    with pytest.raises(ValueError, match="invalid labels"):
-        _resolve_labels(["nope"], repo_labels)
+# --- writes go to the knot as the caller ---------------------------------------
+
+
+class Knot:
+    """captures writes; answers like knot-server does"""
+
+    def __init__(self, world: World) -> None:
+        self.writes: list[dict[str, Any]] = []
+        self.minted: list[dict[str, str]] = []
+        self.attested: list[dict[str, Any]] = []
+        world.routes[(KNOT, "com.atproto.repo.createRecord")] = self.write
+        world.routes[(KNOT, "com.atproto.repo.putRecord")] = self.write
+        world.routes[(KNOT, "com.atproto.repo.deleteRecord")] = self.write
+        world.routes[(KNOT, "com.atproto.repo.getRecord")] = self.get
+        world.routes[("pds.example", "com.atproto.server.getServiceAuth")] = self.mint
+        world.routes[("pds.example", "com.atproto.repo.putRecord")] = self.attest
+
+    def write(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        body["_nsid"] = request.url.path.rsplit("/", 1)[-1]
+        body["_auth"] = request.headers["authorization"]
+        self.writes.append(body)
+        return httpx.Response(
+            200,
+            json={
+                "uri": f"at://{REPO_DID}/{body['collection']}/27",
+                "cid": "written",
+                "x-tngl-change": "change-oid",
+            },
+        )
+
+    def get(self, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "uri": TICKET_26,
+                "cid": "current",
+                "value": {
+                    "$type": "org.tangled.track.ticket",
+                    "title": {"$type": records.INLINE, "text": "t"},
+                    "state": "open",
+                    "createdAt": "2026-10-09T06:34:13Z",
+                    "x-tngl-editor": "did:plc:someone",
+                },
+            },
+        )
+
+    def mint(self, request: httpx.Request) -> httpx.Response:
+        self.minted.append(dict(request.url.params))
+        return httpx.Response(
+            200, json={"token": f"token-for-{request.url.params['lxm']}"}
+        )
+
+    def attest(self, request: httpx.Request) -> httpx.Response:
+        self.attested.append(json.loads(request.content))
+        return httpx.Response(200, json={"uri": "at://me/x/y", "cid": "c"})
+
+
+@pytest.fixture
+def knot(world: World, monkeypatch: pytest.MonkeyPatch) -> Knot:
+    k = Knot(world)
+
+    async def login() -> records.Session:
+        return records.Session(
+            client=bobbin._client, did="did:plc:me", pds="https://pds.example"
+        )
+
+    monkeypatch.setattr(records, "login", login)
+    return k
+
+
+async def test_create_issue_writes_through_the_knot_and_attests(
+    world: World, knot: Knot
+):
+    result = await server.create_issue(REPO_DID, "a title", body="a body")
+    [write] = knot.writes
+    assert write["_nsid"] == "com.atproto.repo.createRecord"
+    assert write["repo"] == REPO_DID
+    assert "rkey" not in write  # the knot mints ticket numbers
+    assert write["record"]["title"] == {"$type": records.INLINE, "text": "a title"}
+    assert write["record"]["body"] == {"$type": records.MARKDOWN, "text": "a body"}
+    assert write["record"]["state"] == "open"
+    assert write["_auth"] == "Bearer token-for-com.atproto.repo.createRecord"
+    assert knot.minted == [{"aud": REPO_DID, "lxm": "com.atproto.repo.createRecord"}]
+    [attestation] = knot.attested
+    assert attestation["collection"] == records.ATTESTATION
+    assert attestation["record"]["subject"] == {"uri": result["uri"], "cid": "written"}
+    assert attestation["record"]["change"] == "change-oid"
+    assert result["url"].endswith("/issues/27")
+
+
+async def test_a_failed_attestation_is_reported_not_raised(world: World, knot: Knot):
+    world.routes[("pds.example", "com.atproto.repo.putRecord")] = lambda _: (
+        httpx.Response(500, json={"error": "InternalServerError", "message": "down"})
+    )
+    result = await server.create_issue(REPO_DID, "a title")
+    assert result["cid"] == "written"
+    assert "down" in result["attestation_error"]
+
+
+async def test_set_issue_state_swaps_the_current_version(world: World, knot: Knot):
+    await server.set_issue_state(TICKET_26, "closed")
+    [write] = knot.writes
+    assert write["_nsid"] == "com.atproto.repo.putRecord"
+    assert (write["rkey"], write["swapRecord"]) == ("26", "current")
+    assert write["record"]["state"] == "closed"
+    assert "x-tngl-editor" not in write["record"]  # the knot stamps it
+
+
+async def test_comment_on_pull_points_at_the_latest_round(world: World, knot: Knot):
+    world.routes[(KNOT, "com.atproto.repo.listRecords")] = {
+        "records": [patch_record("round", "26", "b", "h", "2026-11-01T00:00:00Z")]
+    }
+    await server.comment_on_pull(TICKET_26, "VERDICT: approve", expected_cid="round")
+    [write] = knot.writes
+    assert write["collection"] == records.COMMENT
+    assert write["record"]["subject"] == {
+        "uri": f"at://{REPO_DID}/org.tangled.review.patch/round",
+        "cid": "round",
+    }
+    assert write["record"]["body"]["text"] == "VERDICT: approve"
+
+
+async def test_stale_review_rejected_before_login(world: World, monkeypatch):
+    world.routes[(KNOT, "com.atproto.repo.listRecords")] = {
+        "records": [patch_record("new", "26", "b", "h", "2026-11-01T00:00:00Z")]
+    }
+    login = AsyncMock()
+    monkeypatch.setattr(records, "login", login)
+    with pytest.raises(ValueError, match="Pull changed"):
+        await server.comment_on_pull(TICKET_26, "VERDICT: approve", expected_cid="old")
+    login.assert_not_awaited()
+
+
+async def test_verdict_requires_revision_identity(monkeypatch):
+    login = AsyncMock()
+    monkeypatch.setattr(records, "login", login)
+    with pytest.raises(ValueError, match="require the CID"):
+        await server.comment_on_pull(TICKET_26, "VERDICT: approve")
+    login.assert_not_awaited()
+
+
+# --- credentials ---------------------------------------------------------------
 
 
 def test_tid_shape_and_sortability():
@@ -230,15 +534,7 @@ def test_tid_shape_and_sortability():
     assert a[:10] <= b[:10]  # timestamp prefix is base32-sortable
 
 
-def _const(value: str):
-    async def fake(*args: Any, **kwargs: Any) -> str:
-        return value
-
-    return fake
-
-
 def test_resolve_credentials_headers_win_and_never_mix(monkeypatch: Any):
-    from tangled_mcp import records
     from tangled_mcp.settings import settings
 
     monkeypatch.setattr(settings, "tangled_handle", "env.handle")
@@ -270,20 +566,11 @@ def test_resolve_credentials_headers_win_and_never_mix(monkeypatch: Any):
 
 
 async def test_discover_pds_routes_by_did_method(monkeypatch: Any):
-    from tangled_mcp import records
-
     requested: list[str] = []
 
     class FakeResponse:
         def json(self) -> dict[str, Any]:
-            return {
-                "service": [
-                    {
-                        "type": "AtprotoPersonalDataServer",
-                        "serviceEndpoint": "https://pds.example",
-                    }
-                ]
-            }
+            return did_doc("https://pds.example")
 
     class FakeClient:
         def __init__(self, **kwargs: Any) -> None: ...
@@ -302,474 +589,3 @@ async def test_discover_pds_routes_by_did_method(monkeypatch: Any):
 
     assert await records.discover_pds("did:web:pds.example") == "https://pds.example"
     assert requested[-1] == "https://pds.example/.well-known/did.json"
-
-
-async def test_create_pull_record_shape(monkeypatch: Any):
-    import gzip
-
-    from tangled_mcp import records, server
-    from tangled_mcp.bobbin import Repo
-
-    async def fake_resolve(identifier: str) -> Repo:
-        return Repo(
-            owner_did="did:plc:owner",
-            name="myrepo",
-            uri="at://did:plc:owner/sh.tangled.repo/myrepo",
-            knot="knot1.tangled.sh",
-            repo_did="did:plc:repodid",
-            labels=[],
-            description=None,
-        )
-
-    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
-        assert nsid == "sh.tangled.repo.getDefaultBranch"
-        return {"name": "main"}
-
-    async def fake_repo_query(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
-        from tangled_mcp.bobbin import BobbinError
-
-        raise BobbinError(f"{nsid} not on this fake knot", status=404)
-
-    monkeypatch.setattr(server.bobbin, "repo_query", fake_repo_query)
-
-    uploaded: dict[str, Any] = {}
-    put: dict[str, Any] = {}
-
-    class FakeSession:
-        did = "did:plc:me"
-
-        class client:
-            @staticmethod
-            async def aclose() -> None: ...
-
-        async def upload_blob(self, data: bytes, mime_type: str) -> dict[str, Any]:
-            uploaded["data"] = data
-            uploaded["mime_type"] = mime_type
-            return {"$type": "blob", "ref": {"$link": "bafyfake"}}
-
-        async def put_record(
-            self, collection: str, rkey: str, record: dict[str, Any]
-        ) -> dict[str, Any]:
-            put["collection"] = collection
-            put["record"] = record
-            return {"uri": f"at://did:plc:me/{collection}/{rkey}"}
-
-    monkeypatch.setattr(server.bobbin, "resolve_repo", fake_resolve)
-    monkeypatch.setattr(server.bobbin, "query", fake_query)
-
-    async def fake_login() -> Any:
-        return FakeSession()
-
-    monkeypatch.setattr(records, "login", fake_login)
-
-    result = await server.create_pull(
-        repo="owner.example/myrepo",
-        title="fix things",
-        patch="From abc123 Mon Sep 17 00:00:00 2001\n...",
-        body="why not",
-    )
-
-    assert uploaded["mime_type"] == "application/gzip"
-    assert gzip.decompress(uploaded["data"]).startswith(b"From abc123")
-    record = put["record"]
-    assert put["collection"] == "sh.tangled.repo.pull"
-    assert record["target"] == {"repo": "did:plc:repodid", "branch": "main"}
-    assert record["rounds"][0]["patchBlob"]["ref"]["$link"] == "bafyfake"
-    assert result["uri"].startswith("at://did:plc:me/sh.tangled.repo.pull/")
-    assert result["url"].endswith("/pulls")
-
-
-async def test_create_pull_edits_diff_against_the_knot_and_fail_loud(monkeypatch: Any):
-    """2026-08-21: phi's pull request against personalities/phi.md arrived as
-    a new-file patch (--- /dev/null) and would not apply: the base read went
-    to bobbin, failed, and the failure was read as "file does not exist".
-    The base now comes from the repo's knot, and only a 404 means new."""
-    from tangled_mcp import records, server
-    from tangled_mcp.bobbin import BobbinError, Repo
-
-    repo = Repo(
-        owner_did="did:plc:owner",
-        name="bot",
-        uri="at://did:plc:owner/sh.tangled.repo/bot",
-        knot="knot1.tangled.sh",
-        repo_did="did:plc:repodid",
-        labels=[],
-        description=None,
-    )
-
-    async def fake_resolve(identifier: str) -> Repo:
-        return repo
-
-    async def fake_query(nsid: str, **params: Any) -> dict[str, Any]:
-        return {"name": "main"}
-
-    captured: dict[str, Any] = {}
-
-    class FakeSession:
-        did = "did:plc:me"
-
-        class client:
-            @staticmethod
-            async def aclose() -> None: ...
-
-        async def upload_blob(self, data: bytes, mime_type: str) -> dict[str, Any]:
-            import gzip
-
-            captured["patch"] = gzip.decompress(data).decode()
-            return {"$type": "blob", "ref": {"$link": "bafyfake"}}
-
-        async def put_record(
-            self, collection: str, rkey: str, record: dict[str, Any]
-        ) -> dict[str, Any]:
-            return {"uri": f"at://did:plc:me/{collection}/{rkey}"}
-
-    async def fake_login() -> Any:
-        return FakeSession()
-
-    monkeypatch.setattr(server.bobbin, "resolve_repo", fake_resolve)
-    monkeypatch.setattr(server.bobbin, "query", fake_query)
-    monkeypatch.setattr(records, "login", fake_login)
-    monkeypatch.setattr(
-        records, "resolve_credentials", lambda: type("C", (), {"handle": "phi"})()
-    )
-
-    # existing file on the knot → a modification, not a creation
-    async def knot_has_file(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
-        assert r is repo
-        if nsid == "sh.tangled.repo.getDefaultBranch":
-            return {"name": "main"}
-        assert nsid == "sh.tangled.repo.blob"
-        assert params == {"path": "personalities/phi.md", "ref": "main"}
-        return {"content": "old text\n"}
-
-    monkeypatch.setattr(server.bobbin, "repo_query", knot_has_file)
-    await server.create_pull(
-        repo="zzstoatzz.io/bot",
-        title="t",
-        edits=[server.Edit(path="personalities/phi.md", content="new text\n")],
-    )
-    assert "--- /dev/null" not in captured["patch"]
-    assert "-old text" in captured["patch"] and "+new text" in captured["patch"]
-
-    # a non-404 failure is an error, never "new file"
-    async def knot_rate_limited(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
-        if nsid == "sh.tangled.repo.getDefaultBranch":
-            return {"name": "main"}
-        raise BobbinError("blob failed (429) slow down", status=429)
-
-    monkeypatch.setattr(server.bobbin, "repo_query", knot_rate_limited)
-    import pytest
-
-    with pytest.raises(ValueError, match="could not read current"):
-        await server.create_pull(
-            repo="zzstoatzz.io/bot",
-            title="t",
-            edits=[server.Edit(path="personalities/phi.md", content="x")],
-        )
-
-    # a real 404 is a new file
-    async def knot_not_found(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
-        if nsid == "sh.tangled.repo.getDefaultBranch":
-            return {"name": "main"}
-        raise BobbinError("blob failed (404) not found", status=404)
-
-    monkeypatch.setattr(server.bobbin, "repo_query", knot_not_found)
-    await server.create_pull(
-        repo="zzstoatzz.io/bot",
-        title="t",
-        edits=[server.Edit(path="docs/new.md", content="hello\n")],
-    )
-    assert "--- /dev/null" in captured["patch"]
-
-
-async def test_default_branch_survives_bobbin_rate_limit(monkeypatch: Any):
-    from tangled_mcp import server
-    from tangled_mcp.bobbin import BobbinError, Repo
-
-    repo = Repo(
-        owner_did="d",
-        name="bot",
-        uri="at://d/sh.tangled.repo/bot",
-        knot="knot1.tangled.sh",
-        repo_did="did:plc:r",
-        labels=[],
-        description=None,
-    )
-
-    async def knot_silent(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
-        raise BobbinError("nope", status=404)
-
-    async def bobbin_429(nsid: str, **params: Any) -> dict[str, Any]:
-        raise BobbinError("getDefaultBranch failed (429)", status=429)
-
-    monkeypatch.setattr(server.bobbin, "repo_query", knot_silent)
-    monkeypatch.setattr(server.bobbin, "query", bobbin_429)
-    assert await server._default_branch(repo) == "main"
-
-
-@pytest.mark.parametrize("round_count", [1, 3])
-async def test_comment_on_pull_record_shape(monkeypatch: Any, round_count):
-    from tangled_mcp import records, server
-
-    put: dict[str, Any] = {}
-
-    class FakeSession:
-        class client:
-            @staticmethod
-            async def aclose() -> None: ...
-
-        async def put_record(
-            self, collection: str, rkey: str, record: dict[str, Any]
-        ) -> dict[str, Any]:
-            put["collection"] = collection
-            put["record"] = record
-            return {"uri": f"at://did:plc:me/{collection}/{rkey}"}
-
-    async def fake_login() -> Any:
-        return FakeSession()
-
-    monkeypatch.setattr(records, "login", fake_login)
-
-    async def fake_get_record(uri: str) -> dict[str, Any]:
-        return {"uri": uri, "cid": "bafypull", "value": {"rounds": [{}] * round_count}}
-
-    monkeypatch.setattr(server.bobbin, "get_record", fake_get_record)
-    pull = "at://did:plc:phi/sh.tangled.repo.pull/3abc"
-    result = await server.comment_on_pull(
-        pull=pull, body="2/10", expected_cid="bafypull"
-    )
-    assert put["record"]["pullRoundIdx"] == round_count - 1
-    assert put["collection"] == "sh.tangled.feed.comment"
-    assert put["record"]["subject"] == {"uri": pull, "cid": "bafypull"}
-    assert put["record"]["body"]["text"] == "2/10"
-    assert put["record"]["body"]["$type"] == "sh.tangled.markup.markdown"
-    assert result["uri"].startswith("at://did:plc:me/sh.tangled.feed.comment/")
-
-
-async def test_update_pull_appends_a_round_to_the_same_record(monkeypatch: Any):
-    """2026-08-21: asked to revise after a review, phi closed the reviewed
-    pull and opened a new one, because the tool had no way to add a round.
-    A revision belongs on the pull the reviewer commented on."""
-    import gzip
-
-    from tangled_mcp import records, server
-    from tangled_mcp.bobbin import Repo
-
-    repo = Repo(
-        owner_did="did:plc:owner",
-        name="bot",
-        uri="at://did:plc:owner/sh.tangled.repo/bot",
-        knot="knot1.tangled.sh",
-        repo_did="did:plc:repodid",
-        labels=[],
-        description=None,
-    )
-    existing = {
-        "$type": records.PULL,
-        "title": "toast",
-        "body": "v1",
-        "target": {"repo": "did:plc:repodid", "branch": "main"},
-        "rounds": [
-            {
-                "patchBlob": {"ref": {"$link": "bafyold"}},
-                "createdAt": "2026-08-21T08:00:00Z",
-            }
-        ],
-        "createdAt": "2026-08-21T08:00:00Z",
-    }
-    put: dict[str, Any] = {}
-
-    class FakeSession:
-        did = "did:plc:phi"
-
-        class client:
-            @staticmethod
-            async def aclose() -> None: ...
-
-        async def get_record(self, collection: str, rkey: str) -> dict[str, Any]:
-            assert (collection, rkey) == (records.PULL, "3abc")
-            return {"value": existing}
-
-        async def upload_blob(self, data: bytes, mime_type: str) -> dict[str, Any]:
-            put["patch"] = gzip.decompress(data).decode()
-            return {"$type": "blob", "ref": {"$link": "bafynew"}}
-
-        async def put_record(
-            self, collection: str, rkey: str, record: dict[str, Any]
-        ) -> dict[str, Any]:
-            put["rkey"] = rkey
-            put["record"] = record
-            return {"uri": f"at://did:plc:phi/{collection}/{rkey}"}
-
-    async def fake_login() -> Any:
-        return FakeSession()
-
-    async def fake_resolve(identifier: str) -> Repo:
-        assert identifier == "did:plc:repodid"
-        return repo
-
-    async def knot(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
-        assert nsid == "sh.tangled.repo.blob" and params["ref"] == "main"
-        return {"content": "old\n"}
-
-    monkeypatch.setattr(records, "login", fake_login)
-    monkeypatch.setattr(
-        records, "resolve_credentials", lambda: type("C", (), {"handle": "phi"})()
-    )
-    monkeypatch.setattr(server.bobbin, "resolve_repo", fake_resolve)
-    monkeypatch.setattr(server.bobbin, "repo_query", knot)
-
-    result = await server.update_pull(
-        pull="at://did:plc:phi/sh.tangled.repo.pull/3abc",
-        edits=[server.Edit(path="personalities/phi.md", content="new\n")],
-        note="feynman, not peers",
-    )
-    assert put["rkey"] == "3abc"
-    assert len(put["record"]["rounds"]) == 2
-    assert put["record"]["rounds"][0]["patchBlob"]["ref"]["$link"] == "bafyold"
-    assert put["record"]["rounds"][1]["patchBlob"]["ref"]["$link"] == "bafynew"
-    assert "-old" in put["patch"] and "+new" in put["patch"]
-    assert put["record"]["body"].endswith("round 2: feynman, not peers")
-    assert result["round"] == 2
-
-
-async def test_update_pull_refuses_someone_elses_pull(monkeypatch: Any):
-    from tangled_mcp import records, server
-
-    class FakeSession:
-        did = "did:plc:phi"
-
-        class client:
-            @staticmethod
-            async def aclose() -> None: ...
-
-    async def fake_login() -> Any:
-        return FakeSession()
-
-    monkeypatch.setattr(records, "login", fake_login)
-    import pytest
-
-    with pytest.raises(ValueError, match="your own"):
-        await server.update_pull(
-            pull="at://did:plc:other/sh.tangled.repo.pull/3abc", edits=[]
-        )
-
-
-async def test_get_pull_patch_returns_latest_round(monkeypatch: Any):
-    import gzip
-
-    from tangled_mcp import records, server
-
-    pull = "at://did:plc:author/sh.tangled.repo.pull/3abc"
-
-    async def fake_get_record(uri: str) -> dict[str, Any]:
-        assert uri == pull
-        return {
-            "value": {
-                "rounds": [
-                    {"patchBlob": {"ref": {"$link": "old"}}},
-                    {"patchBlob": {"ref": {"$link": "newest"}}},
-                ]
-            }
-        }
-
-    async def fake_discover_pds(did: str) -> str:
-        assert did == "did:plc:author"
-        return "https://pds.example"
-
-    fetched: dict[str, Any] = {}
-
-    class FakeResponse:
-        content = gzip.compress(b"From abc123 Mon Sep 17 00:00:00 2001\n")
-
-        def raise_for_status(self) -> None:
-            pass
-
-    class FakeClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> "FakeClient":
-            return self
-
-        async def __aexit__(self, *args: Any) -> None:
-            pass
-
-        async def get(self, url: str, params: dict[str, str]) -> FakeResponse:
-            fetched.update(params)
-            return FakeResponse()
-
-    monkeypatch.setattr(server.bobbin, "get_record", fake_get_record)
-    monkeypatch.setattr(records, "discover_pds", fake_discover_pds)
-    monkeypatch.setattr(server.httpx, "AsyncClient", FakeClient)
-
-    patch = await server.get_pull_patch(pull)
-    assert patch.startswith("From abc123")
-    assert fetched == {"did": "did:plc:author", "cid": "newest"}
-
-
-async def test_stale_review_rejected_before_login(monkeypatch):
-    from unittest.mock import AsyncMock
-
-    from tangled_mcp import records, server
-
-    login = AsyncMock()
-    monkeypatch.setattr(records, "login", login)
-    monkeypatch.setattr(
-        server.bobbin,
-        "get_record",
-        AsyncMock(return_value={"cid": "new", "value": {"rounds": [{}, {}]}}),
-    )
-    with pytest.raises(ValueError, match="Pull changed"):
-        await server.comment_on_pull(
-            pull="at://did:plc:test/sh.tangled.repo.pull/test",
-            body="VERDICT: approve",
-            expected_cid="old",
-        )
-    login.assert_not_awaited()
-    with pytest.raises(ValueError, match="Pull changed"):
-        await server.get_pull_patch(
-            pull="at://did:plc:test/sh.tangled.repo.pull/test", expected_cid="old"
-        )
-
-
-async def test_verdict_requires_revision_identity(monkeypatch):
-    from unittest.mock import AsyncMock
-
-    from tangled_mcp import records, server
-
-    login = AsyncMock()
-    monkeypatch.setattr(records, "login", login)
-    with pytest.raises(ValueError, match="require the CID"):
-        await server.comment_on_pull(
-            pull="at://did:plc:test/sh.tangled.repo.pull/test", body="VERDICT: approve"
-        )
-    login.assert_not_awaited()
-
-
-async def test_revision_between_patch_read_and_verdict_rejects_comment(monkeypatch):
-    from unittest.mock import AsyncMock
-
-    from tangled_mcp import records, server
-
-    pull = "at://did:plc:test/sh.tangled.repo.pull/test"
-    reviewed = {"cid": "revision-one", "value": {"rounds": [{"patchBlob": {}}]}}
-    revised = {"cid": "revision-two", "value": {"rounds": [{}, {}]}}
-    monkeypatch.setattr(
-        server.bobbin, "get_record", AsyncMock(side_effect=[reviewed, revised])
-    )
-    patch = AsyncMock(return_value="the first revision patch")
-    monkeypatch.setattr(server, "_pull_round_patch", patch)
-    login = AsyncMock()
-    monkeypatch.setattr(records, "login", login)
-
-    assert (
-        await server.get_pull_patch(pull, expected_cid="revision-one")
-        == "the first revision patch"
-    )
-    patch.assert_awaited_once_with(reviewed["value"], "did:plc:test")
-    with pytest.raises(ValueError, match="Pull changed"):
-        await server.comment_on_pull(
-            pull, "VERDICT: approve", expected_cid="revision-one"
-        )
-    login.assert_not_awaited()

@@ -1,0 +1,35 @@
+{
+  "commits": [
+    {
+      "hash": "6f33ba4d0dfd8983dd551b5648232dcaea6b7bee",
+      "author": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-11-01T20:06:14-06:00"
+      },
+      "committer": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-11-01T20:06:14-06:00"
+      },
+      "message": "mcp_tools: default pdsx reads to phi's repo\n\npdsx falls back to the x-atproto-repo header when list_records or\nget_record get no repo. DeepSeek passed repo=null nine times in one run;\nthose reads now go to phi's own repo instead of erroring.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+      "tree": "83ae44abf93a40518214f97c1d0acd3e19e22d2b"
+    },
+    {
+      "hash": "b3cddad2278fd1c958b659b698b7e767ddf8ba32",
+      "author": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-11-01T19:53:05-06:00"
+      },
+      "committer": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-11-01T19:53:05-06:00"
+      },
+      "message": "encounter_recovery: complete a scan at the last completed scan's coverage\n\nSince 2026-10-20 phi's notification history has been longer than the\ntwenty-page bound, so every scan failed even when only 77 events were new.\nA scan now records the start of the last completed scan (less a listing\nmargin) and completes once a page reaches events indexed before it; with\nno completed scan, the bound still fails the scan. Hitting the bound logs\na warning instead of a traceback.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+      "tree": "ed6865318ae34e8872d64b8bcaec3c36103d591d"
+    }
+  ],
+  "cursor": "b3cddad2278fd1c958b659b698b7e767ddf8ba32"
+}

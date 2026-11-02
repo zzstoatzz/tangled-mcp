@@ -1,0 +1,45 @@
+{
+  "cursor": null,
+  "records": [
+    {
+      "cid": "bafyreidauefxqibfaeshwp5rjqbwfc2b6eiocy7ittqe5okkl4ngjnxk6a",
+      "uri": "at://did:plc:ebajxjsw7iuwstddnxt6lt3m/org.tangled.review.patch/bafyreidauefxqibfaeshwp5rjqbwfc2b6eiocy7ittqe5okkl4ngjnxk6a",
+      "value": {
+        "$type": "org.tangled.review.patch",
+        "base": {
+          "oid": "205359a09e24415285faff4a8ed86358f8eaf739"
+        },
+        "createdAt": "2025-10-26T03:56:35Z",
+        "head": {
+          "oid": "205359a09e24415285faff4a8ed86358f8eaf739"
+        },
+        "source": {
+          "branch": "mcp-refactor",
+          "repo": "did:plc:ebajxjsw7iuwstddnxt6lt3m"
+        },
+        "ticket": "20",
+        "x-tngl-editor": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+      }
+    },
+    {
+      "cid": "bafyreihp5bagi56s7okyxoa2r5mwudrmcyslzv5drbz7iubrk7gvxzowbu",
+      "uri": "at://did:plc:ebajxjsw7iuwstddnxt6lt3m/org.tangled.review.patch/bafyreihp5bagi56s7okyxoa2r5mwudrmcyslzv5drbz7iubrk7gvxzowbu",
+      "value": {
+        "$type": "org.tangled.review.patch",
+        "base": {
+          "oid": "34bd629a1349450b251c4a6bc8de527bc687e2de"
+        },
+        "createdAt": "2025-10-09T17:55:23Z",
+        "head": {
+          "oid": "34bd629a1349450b251c4a6bc8de527bc687e2de"
+        },
+        "source": {
+          "branch": "mcp-refactor",
+          "repo": "did:plc:ebajxjsw7iuwstddnxt6lt3m"
+        },
+        "ticket": "19",
+        "x-tngl-editor": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+      }
+    }
+  ]
+}

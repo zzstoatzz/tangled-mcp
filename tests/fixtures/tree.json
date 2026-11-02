@@ -1,0 +1,79 @@
+{
+  "entries": [
+    {
+      "name": "__init__.py",
+      "mode": "0100644",
+      "size": 0,
+      "lastCommit": {
+        "hash": "85235c72d468c4b87ab6f0614826205027eff05b",
+        "author": {
+          "name": "zzstoatzz",
+          "email": "thrast36@gmail.com",
+          "when": "2025-07-20T11:38:06-05:00"
+        },
+        "committer": {
+          "name": "zzstoatzz",
+          "email": "thrast36@gmail.com",
+          "when": "2025-07-20T11:38:06-05:00"
+        },
+        "message": "feat: initial bluesky bot with placeholder responses\n\n- Set up FastAPI web framework with async lifespan management\n- Implement AT Protocol client for Bluesky authentication and API calls\n- Create notification polling system that checks for mentions every 10 seconds\n- Add placeholder response generator with random bot messages\n- Implement proper notification marking using Void's timestamp approach\n- Add graceful shutdown handling for hot reloading\n- Create test scripts for posting and mentions\n- Set up project structure with modular services\n- Add comprehensive sandbox documentation from reference projects\n- Configure development environment with uv, ruff, and ty\n\nThe bot can now:\n- Authenticate with Bluesky using app password\n- Poll for mentions and respond with placeholder messages\n- Properly mark notifications as read without duplicates\n- Handle graceful shutdown during development\n\nReady for LLM integration and memory system implementation.\n\n🤖 Generated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n",
+        "tree": "ed3b802a0ec02acd2b930227d863ee60bb78a1d4"
+      }
+    },
+    {
+      "name": "abilities.py",
+      "mode": "0100644",
+      "size": 12523,
+      "lastCommit": {
+        "hash": "ea75f58e782d7999f241623a73e0a2cc5c900b90",
+        "author": {
+          "name": "zzstoatzz",
+          "email": "thrast36@gmail.com",
+          "when": "2026-11-01T16:08:10-06:00"
+        },
+        "committer": {
+          "name": "zzstoatzz",
+          "email": "thrast36@gmail.com",
+          "when": "2026-11-01T16:08:10-06:00"
+        },
+        "message": "Watch fastmcp triage throughput for the operator\n\nThe operator maintains PrefectHQ/fastmcp, where open PRs went from 47 to 198\nin eight weeks. my-prefect-server now syncs every issue and PR into its\nwarehouse and models intake against merges, how long contributors wait for\na maintainer, and the PRs stuck longest; the hub serves it at\n/api/agents/fastmcp-triage.\n\n- inspect_fastmcp_triage reads that endpoint on demand and renders it with\n  the definitions that keep comparisons honest: bots don't count as\n  maintainers, merges not closures, and the triage-reviewed split is not\n  causal.\n- fastmcp-watch is a weekly pass Prefect wakes through the control API, per\n  the bot's convention. Phi compares against her earlier notes and reports\n  privately only when something changed; a quiet week needs no message.\n- The endpoint is in SERVICE_CHECKS, the tool declares its risk, and\n  docs/memory.md lists the new surface.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+        "tree": "9beb47e92854f75124a3b6f795439c4508623237"
+      }
+    },
+    {
+      "name": "alert_watch.py",
+      "mode": "0100644",
+      "size": 16005,
+      "lastCommit": {
+        "hash": "de0b2494e23445e3c875c08337e53d608bb6dcc5",
+        "author": {
+          "name": "zzstoatzz",
+          "email": "thrast36@gmail.com",
+          "when": "2026-10-08T23:31:42-05:00"
+        },
+        "committer": {
+          "name": "zzstoatzz",
+          "email": "thrast36@gmail.com",
+          "when": "2026-10-08T23:31:42-05:00"
+        },
+        "message": "Resolve context ambiguities identified by Phi after consolidation\n",
+        "tree": "087ca85a4e9e4b174a1d5fbc8b63edee4ced20ac"
+      }
+    }
+  ],
+  "lastCommit": {
+    "hash": "6f33ba4d0dfd8983dd551b5648232dcaea6b7bee",
+    "author": {
+      "name": "zzstoatzz",
+      "email": "thrast36@gmail.com",
+      "when": "2026-11-01T20:06:14-06:00"
+    },
+    "committer": {
+      "name": "zzstoatzz",
+      "email": "thrast36@gmail.com",
+      "when": "2026-11-01T20:06:14-06:00"
+    },
+    "message": "mcp_tools: default pdsx reads to phi's repo\n\npdsx falls back to the x-atproto-repo header when list_records or\nget_record get no repo. DeepSeek passed repo=null nine times in one run;\nthose reads now go to phi's own repo instead of erroring.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "tree": "83ae44abf93a40518214f97c1d0acd3e19e22d2b"
+  }
+}

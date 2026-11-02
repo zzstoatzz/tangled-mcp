@@ -1,0 +1,42 @@
+{
+  "ref": "",
+  "languages": [
+    {
+      "name": "Python",
+      "size": 1707731,
+      "percentage": 82
+    },
+    {
+      "name": "Svelte",
+      "size": 299266,
+      "percentage": 14
+    },
+    {
+      "name": "TypeScript",
+      "size": 61933,
+      "percentage": 3
+    },
+    {
+      "name": "CSS",
+      "size": 13094,
+      "percentage": 1
+    },
+    {
+      "name": "Docker",
+      "size": 2488,
+      "percentage": 0
+    },
+    {
+      "name": "HTML",
+      "size": 1315,
+      "percentage": 0
+    },
+    {
+      "name": "JavaScript",
+      "size": 375,
+      "percentage": 0
+    }
+  ],
+  "totalSize": 2086202,
+  "totalFiles": 7
+}

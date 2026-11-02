@@ -1,0 +1,59 @@
+{
+  "hits": [
+    {
+      "cid": "bafyreigvaizric3ikxqr7q6kmakk2xqxnupxqiodm32vbdog2a5lxodgoy",
+      "nsid": "org.tangled.repo.manifest",
+      "score": 52.836185455322266,
+      "uri": "at://did:plc:ye2tz3atxcyjxb2uzsgw4gub/org.tangled.repo.manifest/self",
+      "value": {
+        "$type": "org.tangled.repo.manifest",
+        "contributionPolicy": "anyone",
+        "createdAt": "2025-12-16T18:23:57.000000Z",
+        "declaration": {
+          "name": "phi",
+          "owner": "did:plc:liryqwpjny2uaaqghibgzoxc"
+        },
+        "description": "exposição de coleção de camisas",
+        "spindle": "did:web:spindle.tangled.network",
+        "x-tngl-editor": "did:plc:liryqwpjny2uaaqghibgzoxc"
+      }
+    },
+    {
+      "cid": "bafyreicswfxeb4dlct63ryqug6lhjzlev7tei7ev26eovp3pnnig3xs5vm",
+      "nsid": "org.tangled.repo.manifest",
+      "score": 52.836185455322266,
+      "uri": "at://did:plc:ldbq7de7f6y4mdyrtyuqytpi/org.tangled.repo.manifest/self",
+      "value": {
+        "$type": "org.tangled.repo.manifest",
+        "contributionPolicy": "anyone",
+        "createdAt": "2026-08-05T12:15:24.000000Z",
+        "declaration": {
+          "name": "phi",
+          "owner": "did:plc:er6hgfop6ig3c5ywjzhfhh3i"
+        },
+        "spindle": "did:web:spindle.tangled.network",
+        "x-tngl-editor": "did:plc:er6hgfop6ig3c5ywjzhfhh3i"
+      }
+    },
+    {
+      "cid": "bafyreidf7g5yus4tf5dowijaukgjmjbotet2zzamod7vkleb7uv3t74yk4",
+      "nsid": "org.tangled.repo.manifest",
+      "score": 44.052154541015625,
+      "uri": "at://did:plc:iim6fk6tyg23liltyr7ea4wi/org.tangled.repo.manifest/self",
+      "value": {
+        "$type": "org.tangled.repo.manifest",
+        "contributionPolicy": "anyone",
+        "createdAt": "2026-10-18T15:28:04.000000Z",
+        "declaration": {
+          "name": "phi-space",
+          "owner": "did:plc:7bfb7pxevrnlzwqywho3xkjo"
+        },
+        "description": "A JavaSpaces-style space as an extension for\nearendil-works/pi-durable\nMany agents (conversations) share one space, take work from it, and t",
+        "spindle": "did:web:spindle.tangled.network",
+        "x-tngl-editor": "did:plc:7bfb7pxevrnlzwqywho3xkjo"
+      }
+    }
+  ],
+  "cursor": "00000003",
+  "total": 92
+}

@@ -1,0 +1,52 @@
+{
+  "branches": [
+    {
+      "name": "main",
+      "oid": "6f33ba4d0dfd8983dd551b5648232dcaea6b7bee",
+      "message": "mcp_tools: default pdsx reads to phi's repo\n\npdsx falls back to the x-atproto-repo header when list_records or\nget_record get no repo. DeepSeek passed repo=null nine times in one run;\nthose reads now go to phi's own repo instead of erroring.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+      "author": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-11-01T20:06:14-06:00"
+      },
+      "committer": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-11-01T20:06:14-06:00"
+      }
+    },
+    {
+      "name": "phi-workflow-requests",
+      "oid": "27be23837e4b4e225b646f6e35993031dd22f602",
+      "message": "Add scoped owner-authorized workflow requests for Phi\n",
+      "author": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-09-09T18:04:22-05:00"
+      },
+      "committer": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-09-09T18:04:22-05:00"
+      }
+    },
+    {
+      "name": "mcp-refactor",
+      "oid": "205359a09e24415285faff4a8ed86358f8eaf739",
+      "message": "feat: minimal eval proof of concept\n\n- single test demonstrating LLM-as-judge pattern\n- test agent without MCP tools to prevent posting\n- simplified conftest to bare essentials\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n",
+      "author": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2025-10-25T22:52:47-05:00"
+      },
+      "committer": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2025-10-25T22:52:47-05:00"
+      }
+    }
+  ],
+  "cursor": "3",
+  "total": 4,
+  "defaultBranch": "main"
+}

@@ -1,0 +1,26 @@
+{
+  "tags": [
+    {
+      "name": "v0.10.49",
+      "oid": "a1a6a08cb8888ce5924f90e738d5e036333e7ef1",
+      "message": "measure the prompt cache instead of asserting it\n\nphi's caching setup (1h tool defs + instructions, 5m messages, and\n`memoize_per_run` so a network-fetched context block can't shift the\nprefix mid-run) was carefully reasoned and never verified. a regression\nin any of it is invisible: the run still succeeds, just at full price.\n\nCacheObservingModel wraps the model and reads the provider's own\ncache_read_tokens / cache_write_tokens off each response. pydantic-ai\n1.x has no after-model-request hook, so the model wrapper is the seam —\nthe approach is borrowed from pydantic-ai-harness's CacheStabilityMonitor,\nwhich needs the 2.x capabilities API.\n\ntwo things it can see that nothing else could:\n\n- mid-run collapse: history is append-only within a run, so each request\n  should read back at least what the last one cached. a drop below half\n  the established prefix warns once and latches until a healthy read-back\n  re-stabilizes. marks are per (provider, model) so the haiku sub-passes\n  don't false-positive the main model.\n- cross-run carry: whether a run's first request reads back the 1h\n  tool+instruction prefix, which is the entire premise of choosing 1h.\n\nobservation is best-effort — it can never take a run down — and end_run\nsits in a finally, since a failed run still spent input tokens.\n\n/api/cache serves the rolling window; the cockpit's /operator page\nrenders one stacked bar per run (read / written at a premium / paid in\nfull) with collapse flags and a carry marker.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n",
+      "author": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-07-24T16:50:13-05:00"
+      }
+    },
+    {
+      "name": "v0.10.48",
+      "oid": "5d2c2ad1943d7591a5ffeff30dc09709ca41c62e",
+      "message": "type memoize_per_run properly\n\nContextBlockFn union (sync/async, with/without RunContext) in, awaitable\nRunContext block out; runtime dispatch keeps a single cast instead of\nper-line ignores. tests use a typed minimal ctx stand-in.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n",
+      "author": {
+        "name": "zzstoatzz",
+        "email": "thrast36@gmail.com",
+        "when": "2026-07-10T10:06:50-05:00"
+      }
+    }
+  ],
+  "cursor": "2",
+  "total": 142
+}

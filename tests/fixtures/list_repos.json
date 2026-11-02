@@ -1,0 +1,56 @@
+{
+  "items": [
+    {
+      "cid": "bafyreiekzg2f45q3cy6nsrk7rylo3om5h6svg6fvg2xl76pvicklbck6bm",
+      "uri": "at://did:plc:o45kgs4q35lmawstcmujes45/org.tangled.repo.manifest/self",
+      "value": {
+        "$type": "org.tangled.repo.manifest",
+        "contributionPolicy": "anyone",
+        "createdAt": "2026-11-02T01:51:01Z",
+        "declaration": {
+          "name": "zio-lalinsky",
+          "owner": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+        },
+        "description": "fork of lalinsky/zio carrying fixes zeldi needs; upstream is authoritative",
+        "x-tngl-editor": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+      }
+    },
+    {
+      "cid": "bafyreiffnyeot3okv6zjfiomdau3osuykgjzsrdydlsdua6yu6t2u2bqd4",
+      "uri": "at://did:plc:yzuwloeuzdrlc2nejhhqueur/org.tangled.repo.manifest/self",
+      "value": {
+        "$type": "org.tangled.repo.manifest",
+        "contributionPolicy": "anyone",
+        "createdAt": "2026-11-01T19:45:44Z",
+        "declaration": {
+          "name": "remind",
+          "owner": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+        },
+        "description": "a reminder bot on atproto: mention it with a time, it replies when the time comes",
+        "x-tngl-editor": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+      }
+    },
+    {
+      "cid": "bafyreieqavhndcdrmrbf3igsbefiyw4zj7e5mkni4zkjpilqyyu6zu53tu",
+      "uri": "at://did:plc:jh2m6glgd6njhl3qrxu4l6ug/org.tangled.repo.manifest/self",
+      "value": {
+        "$type": "org.tangled.repo.manifest",
+        "contributionPolicy": "anyone",
+        "createdAt": "2026-11-01T18:43:11Z",
+        "declaration": {
+          "name": "zeldi",
+          "owner": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+        },
+        "description": "durable-object cells on wasm and object storage",
+        "topics": [
+          "wasm",
+          "celld",
+          "blob"
+        ],
+        "x-tngl-editor": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+      }
+    }
+  ],
+  "cursor": "00065f3b66b34dc0000384df",
+  "total": 118
+}

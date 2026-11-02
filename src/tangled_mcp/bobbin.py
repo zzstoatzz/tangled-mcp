@@ -1,7 +1,9 @@
-"""read client for bobbin, tangled's public XRPC API (api.tangled.org).
+"""read client for tangled's public XRPC surfaces.
 
-bobbin is read-only and unauthenticated. see docs/bobbin-api.md for the
-endpoint map and data-model notes.
+bobbin (api.tangled.org) is the read-only index: repos, tickets, comments,
+search. git data (trees, blobs, commits, diffs) is served by the knot that
+hosts the repository, keyed by the repository's own DID. neither needs auth.
+see docs/bobbin-api.md for the endpoint map and data-model notes.
 """
 
 from dataclasses import dataclass
@@ -13,6 +15,9 @@ from tangled_mcp.settings import BOBBIN_URL
 
 _client = httpx.AsyncClient(timeout=15.0)
 
+MANIFEST = "org.tangled.repo.manifest"
+LEGACY_REPO = "sh.tangled.repo"
+
 
 class BobbinError(RuntimeError):
     """an xrpc read failed. `status` is the HTTP status when there was one,
@@ -23,20 +28,25 @@ class BobbinError(RuntimeError):
         self.status = status
 
 
+def _failure(where: str, response: httpx.Response) -> BobbinError:
+    try:
+        payload = response.json()
+        message = f"{payload.get('error', 'error')}: {payload.get('message', '')}"
+    except Exception:
+        message = response.text[:200]
+    return BobbinError(
+        f"{where} failed ({response.status_code}) {message}",
+        status=response.status_code,
+    )
+
+
 async def query(nsid: str, **params: Any) -> dict[str, Any]:
     """GET /xrpc/<nsid> against bobbin, raising a clean error on failure"""
     clean = {k: v for k, v in params.items() if v is not None}
     response = await _client.get(f"{BOBBIN_URL}/xrpc/{nsid}", params=clean)
     if response.is_success:
         return response.json()
-    try:
-        payload = response.json()
-        message = f"{payload.get('error', 'error')}: {payload.get('message', '')}"
-    except Exception:
-        message = response.text[:200]
-    raise BobbinError(
-        f"{nsid} failed ({response.status_code}) {message}", status=response.status_code
-    )
+    raise _failure(nsid, response)
 
 
 async def resolve_handle(handle: str) -> str:
@@ -53,7 +63,11 @@ async def resolve_handle(handle: str) -> str:
 
 
 async def resolve_pds(did: str) -> str:
-    """resolve a DID to its PDS endpoint (supports did:plc and did:web)"""
+    """resolve a DID to its PDS endpoint (supports did:plc and did:web).
+
+    a repository DID's PDS is the knot that hosts it, so this also finds
+    where tickets, patches, and comments live.
+    """
     if did.startswith("did:plc:"):
         response = await _client.get(f"https://plc.directory/{did}")
     elif did.startswith("did:web:"):
@@ -73,7 +87,7 @@ async def resolve_pds(did: str) -> str:
 async def list_records(
     did: str, collection: str, max_pages: int = 5
 ) -> list[dict[str, Any]]:
-    """page a collection straight off a repo's PDS"""
+    """page a collection straight off a repo's PDS (or knot, for a repo DID)"""
     pds = await resolve_pds(did)
     out: list[dict[str, Any]] = []
     cursor: str | None = None
@@ -85,9 +99,7 @@ async def list_records(
             f"{pds}/xrpc/com.atproto.repo.listRecords", params=params
         )
         if not response.is_success:
-            raise BobbinError(
-                f"listRecords {collection} failed ({response.status_code})"
-            )
+            raise _failure(f"listRecords {collection}", response)
         body = response.json()
         out.extend(body.get("records") or [])
         cursor = body.get("cursor")
@@ -97,7 +109,7 @@ async def list_records(
 
 
 async def get_record(uri: str) -> dict[str, Any]:
-    """fetch any public atproto record by at-uri from its owner's PDS"""
+    """fetch any public atproto record by at-uri from where its DID lives"""
     parts = uri.removeprefix("at://").split("/")
     if len(parts) != 3:
         raise ValueError(f"invalid at-uri: '{uri}'")
@@ -108,7 +120,7 @@ async def get_record(uri: str) -> dict[str, Any]:
         params={"repo": did, "collection": collection, "rkey": rkey},
     )
     if not response.is_success:
-        raise BobbinError(f"record not found: {uri}")
+        raise BobbinError(f"record not found: {uri}", status=response.status_code)
     return response.json()
 
 
@@ -116,93 +128,90 @@ async def get_record(uri: str) -> dict[str, Any]:
 class Repo:
     owner_did: str
     name: str
-    uri: str  # at-uri of the sh.tangled.repo record
+    repo_did: str
     knot: str
-    repo_did: str | None
-    labels: list[str]  # label definition at-uris the repo subscribes to
+    default_branch: str | None
     description: str | None
+    spindle: str | None = None
+
+    @property
+    def uri(self) -> str:
+        """the repository's manifest, on the repo DID's own account"""
+        return f"at://{self.repo_did}/{MANIFEST}/self"
 
 
-def _repo_from_record(owner_did: str, uri: str, value: dict[str, Any]) -> Repo:
-    # new-style records use the repo name as rkey and have name=None;
-    # legacy records have a TID rkey and carry a name field
-    rkey = uri.rsplit("/", 1)[-1]
+def _repo_from_view(body: dict[str, Any]) -> Repo:
+    value = body.get("value") or {}
+    declaration = value.get("declaration") or {}
     return Repo(
-        owner_did=owner_did,
-        name=value.get("name") or rkey,
-        uri=uri,
-        knot=value["knot"],
-        repo_did=value.get("repoDid"),
-        labels=value.get("labels") or [],
+        owner_did=declaration.get("owner") or "",
+        name=declaration.get("name") or "",
+        repo_did=body["uri"].removeprefix("at://").split("/")[0],
+        knot=body.get("knot") or "",
+        default_branch=body.get("defaultBranch"),
         description=value.get("description"),
+        spindle=value.get("spindle"),
     )
 
 
 async def resolve_repo(identifier: str) -> Repo:
     """resolve a repo identifier to a hydrated Repo.
 
-    accepts 'owner/repo' (handle or DID owner), a repo record at-uri, or a
-    bare repo DID.
+    accepts 'owner/repo' (handle or DID owner), a bare repo DID, the repo's
+    manifest at-uri, or a legacy sh.tangled.repo at-uri (owner/rkey=name).
     """
     if identifier.startswith("at://"):
-        body = await query("sh.tangled.repo.getRepo", repo=identifier)
-        owner_did = identifier.removeprefix("at://").split("/")[0]
-        return _repo_from_record(owner_did, body["uri"], body["value"])
+        did, collection, rkey = (identifier.removeprefix("at://").split("/") + [""])[:3]
+        if collection == LEGACY_REPO:
+            return await _by_name(did, rkey)
+        return await _by_repo_did(did)
     if identifier.startswith("did:") and "/" not in identifier:
-        body = await query("sh.tangled.repo.getRepoByRepoDid", repoDid=identifier)
-        owner_did = body["uri"].removeprefix("at://").split("/")[0]
-        return _repo_from_record(owner_did, body["uri"], body["value"])
+        return await _by_repo_did(identifier)
     if "/" not in identifier:
         raise ValueError(
             f"invalid repo identifier: '{identifier}', expected 'owner/repo', "
             "an at-uri, or a repo DID"
         )
     owner, name = identifier.lstrip("@").split("/", 1)
-    owner_did = await resolve_handle(owner)
+    return await _by_name(await resolve_handle(owner), name)
 
-    # fast path: new-style records are keyed by name
-    uri = f"at://{owner_did}/sh.tangled.repo/{name}"
+
+async def _by_name(owner_did: str, name: str) -> Repo:
     try:
-        body = await query("sh.tangled.repo.getRepo", repo=uri)
-        return _repo_from_record(owner_did, body["uri"], body["value"])
-    except BobbinError:
-        pass
-
-    # legacy path: TID rkey with a name field; page through the owner's repos
-    cursor = None
-    while True:
-        page = await query(
-            "sh.tangled.repo.listRepos", subject=owner_did, limit=100, cursor=cursor
-        )
-        for item in page.get("items") or []:
-            value = item.get("value") or {}
-            if value.get("name") == name or item["uri"].rsplit("/", 1)[-1] == name:
-                return _repo_from_record(owner_did, item["uri"], value)
-        cursor = page.get("cursor")
-        if not cursor or not page.get("items"):
-            raise ValueError(f"repo '{name}' not found for owner '{owner}'")
+        body = await query("org.tangled.repo.getRepoByName", owner=owner_did, name=name)
+    except BobbinError as err:
+        if err.status in (400, 404):
+            raise ValueError(
+                f"repo '{name}' not found for owner '{owner_did}'"
+            ) from err
+        raise
+    return _repo_from_view(body)
 
 
-async def repo_query(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
-    """query a repo's git data on the repo's own knot, by repoDid.
+async def _by_repo_did(repo_did: str) -> Repo:
+    return _repo_from_view(
+        await query("org.tangled.repo.getRepoByRepoDid", repoDid=repo_did)
+    )
 
-    the knot is the authority for git data and serves every repo style by
-    repoDid, unauthenticated. bobbin's equivalents require the record
-    at-uri and 404 legacy-rkey repos outright ("repository not found on
-    this knot"), plus rate-limit unauthenticated callers — observed
-    2026-08-12 when phi couldn't read her own source. bobbin is only the
-    fallback for repo records that carry no knot/repoDid.
-    """
-    if not (r.knot and r.repo_did):
-        return await query(nsid, repo=r.uri, **params)
+
+async def _knot_get(r: Repo, nsid: str, **params: Any) -> httpx.Response:
+    if not r.knot:
+        raise BobbinError(f"repo '{r.name}' has no knot")
     clean = {k: v for k, v in params.items() if v is not None}
     response = await _client.get(
         f"https://{r.knot}/xrpc/{nsid}", params={"repo": r.repo_did, **clean}
     )
     if response.is_success:
-        return response.json()
-    raise BobbinError(
-        f"{nsid} failed on knot {r.knot} ({response.status_code}) "
-        f"{response.text[:200]}",
-        status=response.status_code,
-    )
+        return response
+    raise _failure(f"{nsid} on knot {r.knot}", response)
+
+
+async def git_query(r: Repo, nsid: str, **params: Any) -> dict[str, Any]:
+    """an org.tangled.git.* query on the repo's knot, by repo DID"""
+    return (await _knot_get(r, nsid, **params)).json()
+
+
+async def git_blob(r: Repo, path: str, ref: str | None = None) -> bytes:
+    """a file's raw bytes at `ref`. a missing path raises with status 404."""
+    response = await _knot_get(r, "org.tangled.git.getBlob", path=path, ref=ref)
+    return response.content

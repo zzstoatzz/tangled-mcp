@@ -1,0 +1,19 @@
+{
+  "cid": "bafyreieq2bnqrim5vpo7td2azbnbub65gtl3y33zyswnasl6ogdk4skwbe",
+  "defaultBranch": "main",
+  "knot": "knot1.tangled.sh",
+  "uri": "at://did:plc:ebajxjsw7iuwstddnxt6lt3m/org.tangled.repo.manifest/self",
+  "value": {
+    "$type": "org.tangled.repo.manifest",
+    "contributionPolicy": "anyone",
+    "createdAt": "2025-07-23T19:49:22.000000Z",
+    "declaration": {
+      "name": "bot",
+      "owner": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+    },
+    "description": "a digital entity named phi that roams bsky",
+    "spindle": "did:web:spindle.zzstoatzz.io",
+    "website": "https://phi.zzstoatzz.io",
+    "x-tngl-editor": "did:plc:xbtmt2zjwlrfegqvch7fboei"
+  }
+}

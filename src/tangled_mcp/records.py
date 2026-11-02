@@ -1,7 +1,10 @@
-"""authenticated writes: atproto records on the user's PDS.
+"""authenticated writes.
 
-tangled has no write API — mutations are just records in your own repo
-(sh.tangled.repo.issue, .issue.state, .issue.comment, sh.tangled.label.op).
+tickets, comments, and patches live in the repository DID's account on its
+knot. you write them by calling the knot's com.atproto.repo.* methods with a
+service-auth token your own PDS mints (audience: the repo DID). the knot
+checks your permission and stamps `x-tngl-editor`; an
+org.tangled.graph.attestation on your own PDS then claims the write as yours.
 """
 
 import os
@@ -13,25 +16,25 @@ from typing import Any
 import httpx
 from fastmcp.server.dependencies import get_http_headers
 
-from tangled_mcp.bobbin import resolve_handle
+from tangled_mcp.bobbin import Repo, resolve_handle
 from tangled_mcp.settings import PLC_URL, settings
 
-ISSUE = "sh.tangled.repo.issue"
-PULL = "sh.tangled.repo.pull"
-PULL_STATUS = "sh.tangled.repo.pull.status"
+TICKET = "org.tangled.track.ticket"
+PATCH = "org.tangled.review.patch"
+COMMENT = "org.tangled.feed.comment"
+LABEL_DEFINITION = "org.tangled.label.definition"
+ATTESTATION = "org.tangled.graph.attestation"
+MARKDOWN = "org.tangled.markup.markdown"
+INLINE = "org.tangled.markup.markdown#inline"
+LABEL_TOKEN = "org.tangled.label.defs#labelToken"
 
-PULL_OPEN = "sh.tangled.repo.pull.status.open"
-PULL_CLOSED = "sh.tangled.repo.pull.status.closed"
-PULL_MERGED = "sh.tangled.repo.pull.status.merged"
-ISSUE_STATE = "sh.tangled.repo.issue.state"
-ISSUE_COMMENT = "sh.tangled.repo.issue.comment"
-PULL_COMMENT = "sh.tangled.repo.pull.comment"
-FEED_COMMENT = "sh.tangled.feed.comment"
-MARKDOWN = "sh.tangled.markup.markdown"
-LABEL_OP = "sh.tangled.label.op"
+# legacy pull records stay on their authors' PDSes; pulls opened before the
+# org.tangled migration have tickets but no patch records, so their rounds
+# are still read from here.
+LEGACY_PULL = "sh.tangled.repo.pull"
 
-STATE_OPEN = "sh.tangled.repo.issue.state.open"
-STATE_CLOSED = "sh.tangled.repo.issue.state.closed"
+EDITOR_FIELD = "x-tngl-editor"
+CHANGE_FIELD = "x-tngl-change"
 
 _B32 = "234567abcdefghijklmnopqrstuvwxyz"
 
@@ -46,6 +49,19 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def markdown(text: str) -> dict[str, str]:
+    return {"$type": MARKDOWN, "text": text}
+
+
+def inline(text: str) -> dict[str, str]:
+    return {"$type": INLINE, "text": text}
+
+
+def editable(value: dict[str, Any]) -> dict[str, Any]:
+    """a stored record as a putRecord body: the knot stamps the editor itself"""
+    return {k: v for k, v in value.items() if k != EDITOR_FIELD}
+
+
 @dataclass
 class Session:
     client: httpx.AsyncClient
@@ -57,12 +73,9 @@ class Session:
             method, f"{self.pds}/xrpc/{nsid}", **kwargs
         )
         if not response.is_success:
-            try:
-                payload = response.json()
-                detail = f"{payload.get('error')}: {payload.get('message')}"
-            except Exception:
-                detail = response.text[:200]
-            raise RuntimeError(f"{nsid} failed ({response.status_code}) {detail}")
+            raise RuntimeError(
+                f"{nsid} failed ({response.status_code}) {_detail(response)}"
+            )
         return response.json()
 
     async def put_record(
@@ -79,34 +92,55 @@ class Session:
             },
         )
 
-    async def get_record(self, collection: str, rkey: str) -> dict[str, Any]:
-        return await self._xrpc(
-            "GET",
-            "com.atproto.repo.getRecord",
-            params={"repo": self.did, "collection": collection, "rkey": rkey},
+    async def service_token(self, aud: str, lxm: str) -> str:
+        body = await self._xrpc(
+            "GET", "com.atproto.server.getServiceAuth", params={"aud": aud, "lxm": lxm}
         )
+        return body["token"]
 
-    async def upload_blob(self, data: bytes, mime_type: str) -> dict[str, Any]:
+    async def knot(self, r: Repo, nsid: str, **input: Any) -> dict[str, Any]:
+        """call a procedure on the repo's knot as this account"""
+        token = await self.service_token(r.repo_did, nsid)
         response = await self.client.post(
-            f"{self.pds}/xrpc/com.atproto.repo.uploadBlob",
-            content=data,
-            headers={"Content-Type": mime_type},
+            f"https://{r.knot}/xrpc/{nsid}",
+            json={"repo": r.repo_did, **input},
+            headers={"Authorization": f"Bearer {token}"},
         )
         if not response.is_success:
             raise RuntimeError(
-                f"uploadBlob failed ({response.status_code}) {response.text[:200]}"
+                f"{nsid} on {r.knot} failed ({response.status_code}) {_detail(response)}"
             )
-        return response.json()["blob"]
+        return response.json()
 
-    async def delete_record(self, collection: str, rkey: str) -> None:
-        await self._xrpc(
-            "POST",
-            "com.atproto.repo.deleteRecord",
-            json={"repo": self.did, "collection": collection, "rkey": rkey},
-        )
+    async def attest(self, written: dict[str, Any]) -> dict[str, Any]:
+        """claim a knot-written record as this account's, with its change id"""
+        record: dict[str, Any] = {
+            "$type": ATTESTATION,
+            "subject": {"uri": written["uri"], "cid": written["cid"]},
+            "createdAt": now(),
+        }
+        if change := written.get(CHANGE_FIELD):
+            record["change"] = change
+        return await self.put_record(ATTESTATION, tid(), record)
 
-    def uri(self, collection: str, rkey: str) -> str:
-        return f"at://{self.did}/{collection}/{rkey}"
+    async def knot_write(self, r: Repo, nsid: str, **input: Any) -> dict[str, Any]:
+        """a knot write plus its attestation. the write has landed even when
+        the attestation fails, so that failure is reported, not raised."""
+        written = await self.knot(r, nsid, **input)
+        result = {"uri": written["uri"], "cid": written["cid"]}
+        try:
+            await self.attest(written)
+        except RuntimeError as err:
+            result["attestation_error"] = str(err)
+        return result
+
+
+def _detail(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+        return f"{payload.get('error')}: {payload.get('message')}"
+    except Exception:
+        return response.text[:200]
 
 
 @dataclass
