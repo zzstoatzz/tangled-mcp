@@ -368,21 +368,6 @@ async def test_get_pull_file_reads_the_rounds_head(world: World):
     assert await server.get_pull_file(TICKET_26, "phi.md") == "at head"
 
 
-@pytest.mark.parametrize("tool", ["create_pull", "update_pull"])
-async def test_pull_writes_say_why_they_are_unavailable(tool: str):
-    fn = getattr(server, tool)
-    kwargs = (
-        {"repo": REPO_DID, "title": "t"}
-        if tool == "create_pull"
-        else {
-            "pull": TICKET_26,
-            "edits": [],
-        }
-    )
-    with pytest.raises(ValueError, match="pushed to a tangled repository"):
-        await fn(**kwargs)
-
-
 # --- writes go to the knot as the caller ---------------------------------------
 
 
@@ -396,6 +381,7 @@ class Knot:
         world.routes[(KNOT, "com.atproto.repo.createRecord")] = self.write
         world.routes[(KNOT, "com.atproto.repo.putRecord")] = self.write
         world.routes[(KNOT, "com.atproto.repo.deleteRecord")] = self.write
+        world.routes[(KNOT, "org.tangled.review.submitPatch")] = self.write
         world.routes[(KNOT, "com.atproto.repo.getRecord")] = self.get
         world.routes[("pds.example", "com.atproto.server.getServiceAuth")] = self.mint
         world.routes[("pds.example", "com.atproto.repo.putRecord")] = self.attest
@@ -408,7 +394,7 @@ class Knot:
         return httpx.Response(
             200,
             json={
-                "uri": f"at://{REPO_DID}/{body['collection']}/27",
+                "uri": f"at://{REPO_DID}/{body.get('collection', records.PATCH)}/27",
                 "cid": "written",
                 "x-tngl-change": "change-oid",
             },
@@ -504,6 +490,101 @@ async def test_comment_on_pull_points_at_the_latest_round(world: World, knot: Kn
         "cid": "round",
     }
     assert write["record"]["body"]["text"] == "VERDICT: approve"
+
+
+@pytest.fixture
+def pushes(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    from tangled_mcp import git
+
+    calls: list[dict[str, Any]] = []
+
+    async def fake(url, token, from_branch, to_branch, edits, message, author):
+        calls.append({"url": url, "token": token, "from": from_branch, "to": to_branch})
+        return git.Pushed(parent=f"tip-of-{from_branch}", head="new-head")
+
+    monkeypatch.setattr(git, "commit_and_push", fake)
+    monkeypatch.setattr(
+        records,
+        "resolve_credentials",
+        lambda: records.Credentials(handle="phi.zzstoatzz.io", password="pw"),
+    )
+    return calls
+
+
+async def test_create_pull_pushes_a_branch_then_opens_round_zero(
+    world: World, knot: Knot, pushes: list
+):
+    edit = server.Edit(path="personalities/phi.md", content="new\n")
+    result = await server.create_pull(REPO_DID, "Tighten the voice", edits=[edit])
+    [push] = pushes
+    assert push["url"] == f"https://{KNOT}/{REPO_DID}"
+    assert push["from"] == "main"
+    assert push["to"].startswith("phi/tighten-the-voice-")
+    assert push["token"] == "token-for-org.tangled.git.receivePack"
+    assert {"aud": f"did:web:{KNOT}", "lxm": "org.tangled.git.receivePack"} in (
+        knot.minted
+    )
+    ticket, round_zero = knot.writes
+    assert ticket["record"]["targetBranch"] == "main"
+    assert round_zero["_nsid"] == "org.tangled.review.submitPatch"
+    assert round_zero["patch"] == {
+        "ticket": "27",
+        "base": {"oid": "tip-of-main"},
+        "head": {"oid": "new-head"},
+        "sourceRepo": REPO_DID,
+        "sourceBranch": push["to"],
+    }
+    assert result["url"].endswith("/pulls/27")
+
+
+async def test_a_refused_round_takes_the_ticket_back(
+    world: World, knot: Knot, pushes: list
+):
+    world.routes[(KNOT, "org.tangled.review.submitPatch")] = lambda _: (
+        httpx.Response(400, json={"error": "InvalidRequest", "message": "no head"})
+    )
+    with pytest.raises(RuntimeError, match="no head"):
+        await server.create_pull(
+            REPO_DID, "t", edits=[server.Edit(path="a.md", content="x")]
+        )
+    ticket, erase = knot.writes
+    assert erase["_nsid"] == "com.atproto.repo.deleteRecord"
+    assert (erase["rkey"], erase["swapRecord"]) == ("27", "written")
+
+
+def _own_pull(world: World, author: str) -> None:
+    round_zero = patch_record("r0", "26", "base-oid", "h0", "2026-11-01T00:00:00Z")
+    round_zero["value"]["source"] = {"repo": REPO_DID, "branch": "phi/change"}
+    world.routes[(KNOT, "com.atproto.repo.listRecords")] = {"records": [round_zero]}
+    view = fixture("ticket_view")
+    view["author"] = {"did": author, "handle": "phi.zzstoatzz.io"}
+    world.routes[(BOBBIN, "org.tangled.track.getTicketView")] = view
+
+
+async def test_update_pull_stacks_a_round_on_its_branch(
+    world: World, knot: Knot, pushes: list
+):
+    _own_pull(world, "did:plc:me")
+    result = await server.update_pull(
+        TICKET_26, edits=[server.Edit(path="a.md", content="y")], note="fix"
+    )
+    [push] = pushes
+    assert (push["from"], push["to"]) == ("phi/change", "phi/change")
+    [round_one] = knot.writes
+    assert round_one["patch"]["base"] == {"oid": "base-oid"}
+    assert round_one["patch"]["head"] == {"oid": "new-head"}
+    assert result["round"] == 2
+
+
+async def test_update_pull_refuses_someone_elses_pull(
+    world: World, knot: Knot, pushes: list
+):
+    _own_pull(world, "did:plc:someone-else")
+    with pytest.raises(ValueError, match="your own pull"):
+        await server.update_pull(
+            TICKET_26, edits=[server.Edit(path="a.md", content="y")]
+        )
+    assert pushes == [] and knot.writes == []
 
 
 async def test_stale_review_rejected_before_login(world: World, monkeypatch):

@@ -2,7 +2,7 @@
 
 ## dependencies
 - `uv add` only (NEVER `uv pip`)
-- pure httpx — no atproto SDK (writes are two raw XRPC calls to the PDS)
+- httpx for XRPC — no atproto SDK; dulwich for building and pushing commits
 
 ## deployment
 - pushes to `main` on `origin` (tangled) deploy: `.tangled/workflows/deploy.yml`
@@ -24,8 +24,11 @@
   `org.tangled.graph.attestation` on the caller's PDS
 - a pull is a ticket with `targetBranch` plus immutable `org.tangled.review.patch`
   rounds (base/head commit ids), created by `org.tangled.review.submitPatch`
-  from a pushed branch. patch-only pulls are gone, so `create_pull`/`update_pull`
-  explain that instead of writing
+  from a pushed branch. `create_pull`/`update_pull` build one commit from
+  whole-file edits (dulwich, depth-1 fetch of the branch tip), push it to
+  `https://<knot>/<repo did>` with a receivePack token (`aud` = the knot's
+  did:web) as the basic-auth password, then submit the round. the caller
+  needs push access to the repo
 - migrated pulls have no patch records; their rounds come from the author's
   legacy `sh.tangled.repo.pull` record (matched by author + target + title)
 

@@ -39,6 +39,8 @@ put/delete, stamps `x-tngl-editor`, and returns `x-tngl-change` in the body for
 the caller's `org.tangled.graph.attestation`. a ticket opens `open`; state
 changes are a putRecord by the author or a maintainer.
 
-git push takes the same kind of token (`lxm` `org.tangled.git.receivePack`) as a
-Bearer or Basic password. opening a pull is a ticket plus
-`org.tangled.review.submitPatch` naming a pushed source branch.
+git lives at `https://<knot>/<repo did>` (smart HTTP; fetch is public). a push
+takes a service token with `lxm` `org.tangled.git.receivePack` and `aud` the
+knot's did:web, as a Bearer or Basic password. opening a pull is a ticket with
+`targetBranch` plus `org.tangled.review.submitPatch` `{ticket, base, head,
+sourceRepo, sourceBranch}`; tangled's web UI refuses patch-only pulls.

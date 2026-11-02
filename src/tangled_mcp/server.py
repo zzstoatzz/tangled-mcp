@@ -13,7 +13,7 @@ import httpx
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from tangled_mcp import bobbin, records
+from tangled_mcp import bobbin, git, records
 from tangled_mcp.patch import apply_to_file
 from tangled_mcp.patch import synthesize as synthesize_patch
 from tangled_mcp.settings import APPVIEW_URL
@@ -42,13 +42,6 @@ PullParam = Annotated[
     ),
 ]
 Limit = Annotated[int, Field(ge=1, le=100)]
-
-PULL_PATCH_ONLY = (
-    "tangled no longer accepts patch-only pull requests: a pull is a branch "
-    "pushed to a tangled repository (yours or a fork) plus a patch the knot "
-    "fetches from it. this server cannot push git, so opening or revising a pull "
-    "from edits is unavailable; comment the proposed change on an issue instead."
-)
 
 
 def _text(markup: Any) -> str | None:
@@ -597,25 +590,113 @@ class Edit(BaseModel):
     content: str | None = None
 
 
+def _slug(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "change"
+
+
+async def _push(
+    session: records.Session,
+    r: bobbin.Repo,
+    from_branch: str,
+    to_branch: str,
+    edits: list[Edit],
+    message: str,
+) -> git.Pushed:
+    handle = records.resolve_credentials().handle or session.did
+    token = await session.service_token(f"did:web:{r.knot}", git.PUSH_NSID)
+    return await git.commit_and_push(
+        f"https://{r.knot}/{r.repo_did}",
+        token,
+        from_branch,
+        to_branch,
+        [git.FileEdit(e.path, e.content) for e in edits],
+        message,
+        f"{handle} <noreply@{handle}>",
+    )
+
+
+async def _submit_round(
+    session: records.Session,
+    r: bobbin.Repo,
+    number: str,
+    base: str,
+    head: str,
+    branch: str,
+) -> dict[str, Any]:
+    patch = {
+        "ticket": number,
+        "base": {"oid": base},
+        "head": {"oid": head},
+        "sourceRepo": r.repo_did,
+        "sourceBranch": branch,
+    }
+    return await session.knot_write(r, "org.tangled.review.submitPatch", patch=patch)
+
+
 @tangled_mcp.tool
 async def create_pull(
     repo: RepoParam,
     title: Annotated[str, Field(description="pull request title")],
-    patch: Annotated[str | None, Field(description="git format-patch output")] = None,
     edits: Annotated[
-        list[Edit] | None,
-        Field(description="full desired content per file (content=null deletes)"),
-    ] = None,
+        list[Edit],
+        Field(
+            description="full desired content per file (content=null deletes the "
+            "file); committed on top of the target branch"
+        ),
+    ],
     target_branch: Annotated[
-        str | None, Field(description="branch to merge into")
+        str | None,
+        Field(description="branch to merge into (repo default branch if omitted)"),
     ] = None,
     body: Annotated[
         str | None, Field(description="pull request description (markdown)")
     ] = None,
-) -> dict[str, str]:
-    """open a pull request. unavailable: tangled now opens pulls only from a
-    branch pushed to a tangled repository, and this server cannot push."""
-    raise ValueError(PULL_PATCH_ONLY)
+) -> dict[str, Any]:
+    """open a pull request on a repository you can push to.
+
+    the edits become one commit on a new branch in that repository; the pull
+    is a ticket targeting `target_branch` plus that commit as round 0.
+    """
+    r = await bobbin.resolve_repo(repo)
+    target = target_branch or r.default_branch or "main"
+    session = await records.login()
+    try:
+        handle = (records.resolve_credentials().handle or "change").split(".")[0]
+        branch = f"{handle}/{_slug(title)}-{records.tid()[-4:]}"
+        pushed = await _push(session, r, target, branch, edits, title)
+        record: dict[str, Any] = {
+            "$type": records.TICKET,
+            "title": records.inline(title),
+            "state": "open",
+            "targetBranch": target,
+            "createdAt": records.now(),
+        }
+        if body:
+            record["body"] = records.markdown(body)
+        ticket = await session.knot_write(
+            r, "com.atproto.repo.createRecord", collection=records.TICKET, record=record
+        )
+        number = _rkey(ticket["uri"])
+        try:
+            await _submit_round(session, r, number, pushed.parent, pushed.head, branch)
+        except RuntimeError:
+            # a pull without a round has no diff; take the ticket back
+            await session.knot(
+                r,
+                "com.atproto.repo.deleteRecord",
+                collection=records.TICKET,
+                rkey=number,
+                swapRecord=ticket["cid"],
+            )
+            raise
+    finally:
+        await session.client.aclose()
+    return {
+        **ticket,
+        "branch": branch,
+        "head": pushed.head,
+        "url": f"{_repo_url(r)}/pulls/{number}",
+    }
 
 
 @tangled_mcp.tool
@@ -623,13 +704,37 @@ async def update_pull(
     pull: PullParam,
     edits: Annotated[
         list[Edit],
-        Field(description="full desired content per file (content=null deletes)"),
+        Field(
+            description="full desired content per file (content=null deletes the "
+            "file); committed on top of the pull's latest round"
+        ),
     ],
-    note: Annotated[str | None, Field(description="what this round changes")] = None,
+    note: Annotated[
+        str | None, Field(description="what this round changes (the commit message)")
+    ] = None,
 ) -> dict[str, Any]:
-    """push a new round onto a pull request. unavailable for the same reason
-    as create_pull: a round is a pushed commit, and this server cannot push."""
-    raise ValueError(PULL_PATCH_ONLY)
+    """push a new round onto an existing pull request instead of opening a
+    new one. reviewers comment on a pull; the revision belongs on that same
+    pull. pass each file whole, as you want it now."""
+    rev, view = await _revision(pull)
+    if rev.patch is None or rev.number is None:
+        raise ValueError("only pulls with patch rounds on tangled can take a new round")
+    value = rev.patch["value"]
+    source = value.get("source") or {}
+    if source.get("repo") != rev.repo.repo_did or not source.get("branch"):
+        raise ValueError("this pull's branch is not in the target repository")
+    session = await records.login()
+    try:
+        if ((view or {}).get("author") or {}).get("did") != session.did:
+            raise ValueError("you can only add rounds to your own pull requests")
+        branch = source["branch"]
+        pushed = await _push(session, rev.repo, branch, branch, edits, note or "update")
+        result = await _submit_round(
+            session, rev.repo, rev.number, value["base"]["oid"], pushed.head, branch
+        )
+    finally:
+        await session.client.aclose()
+    return {**result, "round": rev.rounds + 1, "head": pushed.head}
 
 
 async def _legacy_patch(record: dict[str, Any]) -> str:

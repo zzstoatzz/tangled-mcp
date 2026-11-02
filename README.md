@@ -141,7 +141,8 @@ pulls opened before tangled's `org.tangled` migration have no patch records; the
 - `comment_on_issue(issue, body)` / `comment_on_pull(pull, body, expected_cid)`
 - `delete_issue(issue)`
 
-`create_pull` and `update_pull` are unavailable: tangled now opens a pull only from a branch pushed to a tangled repository, and this server cannot push git.
+- `create_pull(repo, title, edits, target_branch, body)` - commits whole-file `edits` on a new branch in the repo, pushes it, and opens the pull (needs push access: owner or collaborator)
+- `update_pull(pull, edits, note)` - commits onto the pull's branch and submits the next round
 
 ## development
 
