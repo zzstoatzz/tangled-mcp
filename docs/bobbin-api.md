@@ -1,66 +1,44 @@
-# bobbin — tangled's public XRPC API
+# tangled's public XRPC surfaces
 
-explored 2026-07-06. base URL: `https://api.tangled.org` (service self-describes at `/`).
-source: `tangled.org/core` → `bobbin/` (rust). lexicons in `bobbin/crates/types/lexicons/`,
-routes in `bobbin/crates/xrpc/src/lib.rs`.
+checked live 2026-11-02, after tangled's move to `org.tangled.*` lexicons
+(tangled core `d15cbd9da`, 2026-10-30). lexicons and placement rules live in
+`tangled.org/core`: `lexicons/org/tangled/`, `docs/src/content/docs/reference/records.md`,
+`docs/src/content/docs/api/{bobbin,knot,spindle}.md`.
 
-## what it is
+## where each read goes
 
-- read-only, **no auth**, stateless "edge index" appview over `sh.tangled.*` records
-- writes stay direct-to-PDS (records) and knot (git ops) — unchanged from before
-- fed by hydrant (event stream) + slingshot (record fetch); returns 502 if slingshot down
-- health/backfill: `sh.tangled.bobbin.getCoverage` → `{ready, eventsProcessed, lastCursor}`
+| what | host | methods |
+|---|---|---|
+| repo lookup | bobbin `api.tangled.org` | `org.tangled.repo.getRepoByName?owner=<DID>&name=` (a handle fails the regex), `getRepoByRepoDid?repoDid=`; both return `{uri: <repoDid>/org.tangled.repo.manifest/self, value, knot, defaultBranch}` |
+| repo lists | bobbin | `org.tangled.repo.listRepos?subject=<owner DID>`, `listIssues` / `listPulls?subject=<repo DID>` (items carry `author`, `state`, `commentCount`, `value`) |
+| ticket | bobbin | `org.tangled.track.getTicketView?uri=` |
+| search | bobbin | `org.tangled.search.query?q=` |
+| git | the repo's knot | `org.tangled.git.getTree`, `getBlob` (raw bytes, 404 `FileNotFound`), `listCommits` (`ref` required), `listBranches`, `listTags`, `listLanguages`, `getDiff?base=&head=` (line numbers only, no text) — all `?repo=<repo DID>`. bobbin 404s these |
+| records | the repo's knot | `com.atproto.repo.getRecord` / `listRecords` for tickets, patches, comments, label definitions |
+| CI | the repo's spindle | `org.tangled.ci.queryPipelines?repo=<repo DID>` on the host of the manifest's `spindle` did:web |
 
-## key data-model changes since v1
+the `org.tangled.temp.git.*` methods (formatPatch, getMergeBase) 404 on knot1.
 
-- **repos have their own DIDs**: repo record carries `repoDid` (e.g. `did:plc:...` with PDS = the knot)
-- **new-style repo records use the repo name as rkey** and have `name: null`;
-  legacy records keep a TID rkey and a `name` field. handle both.
-- issue/PR lists are keyed by **repo DID** (`subject=<repoDid>`), not owner DID
-- lists return rkeys, not sequential issue/PR numbers
-- issue state is derived from `sh.tangled.repo.issue.state` records (open/closed filterable)
+## records
 
-## endpoint families (all GET /xrpc/<nsid>)
+- tickets: `org.tangled.track.ticket`, rkey = the ticket number the knot mints.
+  `title` is `markup.markdown#inline`, `body` is `markup.markdown`, `state` is
+  open/closed/completed. a ticket with `targetBranch` is a pull
+- patches: `org.tangled.review.patch`, rkey = its own cid, `{ticket: <number>,
+  base, head, source}`. one per round, immutable
+- comments: `org.tangled.feed.comment`, `{subject: strongRef, body: markdown}`.
+  the subject can be a ticket or a patch
 
-### single lookups (AT-URI params)
-- `sh.tangled.repo.getRepo?repo=<at-uri>` (+ `getRepos` bulk, `getRepoByRepoDid?repoDid=`)
-- `sh.tangled.repo.getIssue?issue=<at-uri>` (+ `getIssues`)
-- `sh.tangled.repo.getPull?pull=<at-uri>` (+ `getPulls`)
-- `sh.tangled.actor.getProfile?actor=<at-uri of profile record>` (+ `getProfiles`)
+## writes
 
-### aggregations — list/count pairs, `subject=` keyed, plus `...By` variants keyed by author
-common params: `subject` (did), `cursor`, `limit` (≤1000), `order` (asc|desc); response `{items, cursor}` or `{count, distinctAuthors}`
+POST `https://<knot>/xrpc/com.atproto.repo.{createRecord,putRecord,deleteRecord}`
+with `Authorization: Bearer <service JWT>`, minted by the caller's PDS
+(`com.atproto.server.getServiceAuth?aud=<repo DID>&lxm=<method>`). the knot mints
+ticket and comment rkeys (passing one is rejected), requires `swapRecord` on
+put/delete, stamps `x-tngl-editor`, and returns `x-tngl-change` in the body for
+the caller's `org.tangled.graph.attestation`. a ticket opens `open`; state
+changes are a putRecord by the author or a maintainer.
 
-| family | methods |
-|---|---|
-| repo | listRepos, listIssues, listPulls, listArtifacts, listCollaborators (+counts, +By) |
-| repo.issue | listStates (+By, counts) |
-| repo.pull | listStatuses (+By, counts) |
-| feed | listStars, listComments, listReactions (+By, counts) |
-| graph | listFollows, listVouches (+By, counts) |
-| git | listRefUpdates (+By, counts) |
-| label | listDefinitions, listOps (+By, counts) |
-| pipeline | listPipelines, listStatuses (+By, counts) — CI! |
-| knot | listKnots, listMembers (+By, counts) |
-| spindle | listSpindles, listMembers (+By, counts) |
-| publicKey | listKeys (+count) |
-| string | listStrings (+count) — pastes/gists |
-
-### search
-- `sh.tangled.search.query?q=...&limit=...` — full-text over repos/issues/strings, returns scored hits with hydrated records
-
-### git operations (proxied to knots; pass `repo=<repo record at-uri>`, bobbin resolves the knot)
-`archive, blob, branch, branches, compare, describeRepo, diff, getDefaultBranch, languages, log, tag, tags, tree`
-- e.g. `sh.tangled.repo.blob?repo=<at-uri>&path=README.md` → `{content}`
-- `log` returns full commit objects (hash currently a byte array)
-
-### knot passthrough (pass `knot=<host>`)
-`sh.tangled.owner`, `sh.tangled.knot.version`, `sh.tangled.knot.listKeys`
-
-## gotchas observed live
-
-- `listIssues?subject=` rejects at-uris — must be the bare **repoDid**
-- legacy repos (TID rkey): resolve name via record `value.name`; new repos: name = rkey
-- proxied git endpoints error `UpstreamFailed`/`RepoNotFound` for empty or misconfigured repos
-- `getProfile` wants the full profile record at-uri (`.../sh.tangled.actor.profile/self`), not a handle/DID
-- identity resolution (handle→DID) still needs to happen client-side (e.g. via PDS/bsky resolveHandle)
+git push takes the same kind of token (`lxm` `org.tangled.git.receivePack`) as a
+Bearer or Basic password. opening a pull is a ticket plus
+`org.tangled.review.submitPatch` naming a pushed source branch.

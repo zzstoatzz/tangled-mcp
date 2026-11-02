@@ -2,7 +2,7 @@
 
 MCP server for [Tangled](https://tangled.org) - a git collaboration platform built on AT Protocol.
 
-reads go through [bobbin](https://docs.tangled.org/bobbin.html), tangled's public XRPC API (`api.tangled.org`) — **no credentials needed**. writes (issues, comments, labels) are atproto records put directly on your PDS and require an app password.
+reads go through bobbin, tangled's public index (`api.tangled.org`), and the knot that hosts each repository — **no credentials needed**. writes (issues, comments, states) go to the repository's knot with a service-auth token your PDS mints, and require an app password.
 
 > **note**: pushes to `main` deploy the hosted server through tangled CI, which uploads the source to [Prefect Horizon](https://horizon.prefect.io) (`scripts/horizon_deploy.py`). the [GitHub mirror](https://github.com/zzstoatzz/tangled-mcp) only publishes releases to PyPI and the MCP registry on `v*` tags.
 
@@ -107,7 +107,7 @@ uv run tangled-mcp
 
 ## tools
 
-repositories are `owner/repo` (e.g. `zzstoatzz.io/tangled-mcp`); handles (with or without `@`) and DIDs both work for the owner. issues are identified by at-uri.
+repositories are `owner/repo` (e.g. `zzstoatzz.io/tangled-mcp`); handles (with or without `@`) and DIDs both work for the owner, and a bare repo DID works too. issues and pulls are tickets: pass `owner/repo#<number>` or the ticket at-uri.
 
 ### discovery (no auth)
 - `search(query, limit)` - full-text search across repos, issues, and strings
@@ -123,20 +123,25 @@ repositories are `owner/repo` (e.g. `zzstoatzz.io/tangled-mcp`); handles (with o
 - `compare(repo, rev1, rev2)` - diff two revisions
 
 ### issues & pulls (no auth)
-- `list_issues(repo, state, limit)` - filterable by open/closed
+- `list_issues(repo, state, limit)` - filterable by open/closed/completed
 - `get_issue(issue)`
-- `list_pulls(repo, status, limit)` - filterable by open/closed/merged
-- `get_pull(pull)` - single PR with live state (derived from PDS status records, no index lag)
-- `list_pipelines(repo, limit)` - CI pipeline runs
+- `list_pulls(repo, status, limit)` - filterable by open/closed/completed (merged)
+- `get_pull(pull)` - a PR's ticket and its latest patch round; `cid` names the round
+- `get_pull_patch(pull, expected_cid)` - the latest round as format-patch text
+- `get_pull_file(pull, path)` - one file as the latest round leaves it
+- `list_pipelines(repo, limit)` - CI pipeline runs, from the repo's spindle
+
+pulls opened before tangled's `org.tangled` migration have no patch records; their rounds are read from the author's legacy `sh.tangled.repo.pull` record, matched by author, target repo, and title.
 
 ### writes (require credentials)
-- `create_pull(repo, title, patch | edits, target_branch, body)` - open a PR from `git format-patch` output, or from whole-file `edits` (no clone needed — the server synthesizes the patch)
 - `create_issue(repo, title, body, labels)`
 - `update_issue(issue, title, body)`
-- `set_issue_state(issue, state)` - close/reopen
+- `set_issue_state(issue, state)` - close/complete/reopen
 - `set_pull_state(pull, state)` - close/reopen a PR
-- `comment_on_issue(issue, body)`
+- `comment_on_issue(issue, body)` / `comment_on_pull(pull, body, expected_cid)`
 - `delete_issue(issue)`
+
+`create_pull` and `update_pull` are unavailable: tangled now opens a pull only from a branch pushed to a tangled repository, and this server cannot push git.
 
 ## development
 
@@ -145,7 +150,7 @@ just test   # run tests
 just check  # run pre-commit checks
 ```
 
-see [docs/bobbin-api.md](docs/bobbin-api.md) for notes on tangled's public API.
+see [docs/bobbin-api.md](docs/bobbin-api.md) for where each read and write goes.
 
 ---
 

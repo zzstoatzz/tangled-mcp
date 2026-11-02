@@ -5,27 +5,29 @@
 - pure httpx — no atproto SDK (writes are two raw XRPC calls to the PDS)
 
 ## deployment
-- **primary**: https://github.com/zzstoatzz/tangled-mcp (FastMCP Cloud)
-- **mirror**: tangled.sh:zzstoatzz.io/tangled-mcp (dogfooding)
-- `origin` is the tangled remote only — push the GitHub mirror separately
-  (`git push https://github.com/zzstoatzz/tangled-mcp.git main`) to trigger
-  the FastMCP Cloud deploy
+- pushes to `main` on `origin` (tangled) deploy: `.tangled/workflows/deploy.yml`
+  tests, then uploads the checkout to Prefect Horizon (`scripts/horizon_deploy.py`)
+- the GitHub mirror only publishes releases on `v*` tags
 
-## architecture (v2, bobbin era)
-- **all reads** go through bobbin, tangled's public read-only XRPC API at
-  `https://api.tangled.org` — no auth. full endpoint map: `docs/bobbin-api.md`
-- **writes** are atproto records put on the user's PDS via
-  `com.atproto.repo.putRecord` (issues, issue states, comments, label ops)
-- `owner/repo` resolution (`bobbin.resolve_repo`):
-  1. handle → DID (public.api.bsky.app resolveHandle)
-  2. fast path: `getRepo?repo=at://did/sh.tangled.repo/<name>` (new records use name as rkey)
-  3. legacy fallback: page `listRepos`, match `value.name` (TID-rkey records)
-- repos have their own DIDs (`repoDid`); issue/PR/pipeline lists are keyed by
-  repo DID (`subject=`), not owner DID
-- issue records are TID-keyed; no sequential issueId. open/closed is derived
-  from separate `sh.tangled.repo.issue.state` records
-- git ops (tree, blob, log, diff, branches...) are proxied by bobbin to the
-  hosting knot — pass the repo record at-uri as `repo=`
+## architecture (org.tangled era)
+- tangled moved to `org.tangled.*` lexicons on 2026-10-30; every `sh.tangled.*`
+  query 404s. lexicons: `~/tangled.org/tangled.org/core/lexicons/org/tangled`,
+  record placement: `docs/src/content/docs/reference/records.md` in that repo.
+  endpoint map: `docs/bobbin-api.md`
+- **index reads** (repos, tickets, comments, search) go to bobbin (`api.tangled.org`)
+- **git reads** (`org.tangled.git.*`) go to the repo's knot, keyed by repo DID;
+  bobbin does not serve them
+- repositories are their own DIDs whose PDS is the knot. tickets (issues and
+  pulls), patches, comments, and labels live in that account
+- **writes** are the knot's `com.atproto.repo.*` methods with a service token
+  from the caller's PDS (`aud` = repo DID, `lxm` = the method), then an
+  `org.tangled.graph.attestation` on the caller's PDS
+- a pull is a ticket with `targetBranch` plus immutable `org.tangled.review.patch`
+  rounds (base/head commit ids), created by `org.tangled.review.submitPatch`
+  from a pushed branch. patch-only pulls are gone, so `create_pull`/`update_pull`
+  explain that instead of writing
+- migrated pulls have no patch records; their rounds come from the author's
+  legacy `sh.tangled.repo.pull` record (matched by author + target + title)
 
 ## dev
 - justfile: `setup`, `test`, `check`, `push`
